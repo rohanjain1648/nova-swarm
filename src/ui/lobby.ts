@@ -163,12 +163,13 @@ export function drawCoopGameOver(
 /** Esc in co-op: the run keeps going underneath, so this is a menu, not a pause. */
 export function drawCoopMenu(ctx: CanvasRenderingContext2D, w: number, h: number, time: number): void {
   dim(ctx, w, h, 0.45);
-  neonTitle(ctx, "MENU", w / 2, h * 0.32, Math.min(52, w * 0.08), time, w * 0.9);
+  const titleY = h * (isShort(h) ? 0.14 : 0.32);
+  neonTitle(ctx, "MENU", w / 2, titleY, Math.min(isShort(h) ? 32 : 52, w * 0.08), time, w * 0.9);
   ctx.fillStyle = "rgba(230,244,255,0.7)";
   ctx.font = `600 14px ${FONT}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("The run keeps going — your squad needs you!", w / 2, h * 0.32 + 40);
+  ctx.fillText("The run keeps going — your squad needs you!", w / 2, titleY + (isShort(h) ? 26 : 40));
   drawButton(ctx, resumeButtonRect(w, h), "▶  BACK TO RUN", time, PALETTE.player);
   drawButton(ctx, quitButtonRect(w, h), "✕  LEAVE RUN", time, PALETTE.danger);
 }

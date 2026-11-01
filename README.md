@@ -45,6 +45,7 @@ Play one run together with friends — no accounts, just a room code.
 - **Downed, not dead:** at 0 HP you go down. A teammate who stands next to you for 3 seconds revives you at 30% HP. The run ends only when the whole squad is down.
 - **Ping:** press `G` (or tap the **PING** button) to drop a marker your squad can see, with an edge arrow when it's off-screen.
 - The swarm scales with squad size. Co-op best times are tracked separately from solo.
+- **Crossplay:** the Android app and the website share rooms. App players bring their chosen robot's stats; website players use the standard robot.
 
 ### Upgrades & weapons
 

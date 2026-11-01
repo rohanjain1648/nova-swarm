@@ -691,12 +691,13 @@ if (new URLSearchParams(location.search).has("debug")) {
     players: world.players.filter((p) => p.active).length,
     peers: world.players
       .filter((p) => p.active && p.slot !== world.localSlot)
-      .map((p) => ({ slot: p.slot, x: Math.round(p.x), y: Math.round(p.y) })),
+      .map((p) => ({ slot: p.slot, x: Math.round(p.x), y: Math.round(p.y), maxHp: p.maxHp })),
     level: world.level,
     xp: Math.round(world.xp),
     xpToNext: world.xpToNext,
     kills: world.kills,
     hp: Math.round(world.player.hp),
+    maxHp: world.player.maxHp,
     pending: world.pendingLevelUps,
     time: Math.round(world.time),
     facingDeg: Math.round((world.player.facing * 180) / Math.PI),
