@@ -16,7 +16,7 @@ export interface RelayServer {
  * with a WebSocket server on the same port. All room logic lives in
  * RoomManager; this only adapts `ws` sockets to it. Port 0 picks a free port.
  */
-export function createRelayServer(port: number): Promise<RelayServer> {
+export function createRelayServer(port: number, opts: { heartbeatMs?: number } = {}): Promise<RelayServer> {
   const rooms = new RoomManager();
   const http = createServer((req, res) => {
     if (req.url === "/health") {
@@ -29,7 +29,25 @@ export function createRelayServer(port: number): Promise<RelayServer> {
   });
   const wss = new WebSocketServer({ server: http, maxPayload: 256 * 1024 });
 
+  // Heartbeat: a phone that drops off the network never sends a close frame,
+  // so ping every socket and terminate any that missed the previous pong.
+  // terminate() fires "close", which runs RoomManager's normal grace/cleanup.
+  const alive = new WeakMap<WebSocket, boolean>();
+  const heartbeat = setInterval(() => {
+    for (const ws of wss.clients) {
+      if (alive.get(ws) === false) {
+        ws.terminate();
+        continue;
+      }
+      alive.set(ws, false);
+      ws.ping();
+    }
+  }, opts.heartbeatMs ?? 15_000);
+  heartbeat.unref();
+
   wss.on("connection", (ws: WebSocket) => {
+    alive.set(ws, true);
+    ws.on("pong", () => alive.set(ws, true));
     const conn: Conn = {
       send: (data) => {
         if (ws.readyState === ws.OPEN) ws.send(data);
@@ -62,6 +80,7 @@ export function createRelayServer(port: number): Promise<RelayServer> {
         close: () =>
           new Promise<void>((done) => {
             clearInterval(ticker);
+            clearInterval(heartbeat);
             for (const c of wss.clients) c.terminate();
             wss.close(() => http.close(() => done()));
           }),

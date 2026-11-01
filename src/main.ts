@@ -216,7 +216,8 @@ function newRelay(): RelayClient {
     if (r === relay) clientSession?.onSnapshot(b);
   };
   r.onStatus = (s) => {
-    if (r !== relay) return;
+    // While host()/join() is pending its own catch reports the real reason.
+    if (r !== relay || joining) return;
     if (s === "closed") leaveCoop("Connection lost");
     else if (s === "reconnecting") showToast("Reconnecting…", 2000);
   };
@@ -348,6 +349,14 @@ function handleMenu(): void {
     audio.toggleMute();
     input.consumeConfirm();
     return;
+  }
+  if (click && coop !== "ready") {
+    // The dimmed co-op row is a disabled control: tapping it must not start solo.
+    const r = titleButtonRects(W, H);
+    if (pointInRect(click.x, click.y, r.host) || pointInRect(click.x, click.y, r.join)) {
+      input.consumeConfirm();
+      return;
+    }
   }
   if (click && coop === "ready") {
     const r = titleButtonRects(W, H);
@@ -613,7 +622,7 @@ function render(): void {
     drawHuddleWait(hudCtx, W, H, huddleNames);
   }
 
-  if (mode === "client" && clientSession?.hostPaused) drawBanner(hudCtx, W, "Host paused — waiting for the host's game…");
+  if (mode === "client" && clientSession?.hostPaused && relay?.status === "open") drawBanner(hudCtx, W, "Host paused — waiting for the host's game…");
   drawToast();
 }
 

@@ -146,3 +146,9 @@ test("solo reset keeps one player and multipliers at 1", () => {
   const e = w.enemies.find((x) => !x.dead)!;
   expect(e.maxHp).toBe(Math.round(ENEMIES.grunt.baseHp * hpScale(w.time)));
 });
+
+test("reset clears a co-op boss bar so it can't leak into solo", () => {
+  w.bossHpOverride = 0.6;
+  w.reset();
+  expect(w.bossHpFraction).toBeNull();
+});

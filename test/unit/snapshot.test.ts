@@ -14,13 +14,14 @@ import { aimAtNearest, silentAudio } from "./helpers";
 
 const player = (slot: number, over: Partial<PlayerSnap> = {}): PlayerSnap => ({
   slot, active: true, x: 10 * slot, y: -5, vx: 1, vy: 2, facing: 0.5, hp: 80, maxHp: 100, downed: false,
-  reviveT: 0, invuln: 0, orbital: 0, orbitAngle: 0, pickupRadius: 130, kills: 3, ...over,
+  reviveT: 0, invuln: 0, orbital: 0, orbitAngle: 0, pickupRadius: 130, kills: 3,
+  speed: 210, blaster: 1, nova: 0, pingCd: 0, ...over,
 });
 const enemy = (i: number, over: Partial<EnemySnap> = {}): EnemySnap => ({
   i, kind: "grunt", x: 0, y: 0, flash: 0, spawnT: 1, ...over,
 });
 const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
-  seq: 1, time: 12.5, level: 3, xp: 4.25, xpToNext: 30, bossHp: -1, waitingMask: 0, gameOver: false,
+  seq: 1, time: 12.5, level: 3, xp: 4.25, xpToNext: 30, kills: 0, bossHp: -1, waitingMask: 0, gameOver: false,
   players: [], enemies: [], bullets: [], enemyBullets: [], gems: [], novaRings: [], pings: [], effects: [],
   ...over,
 });
@@ -112,4 +113,39 @@ test("captureSnapshot from a live 2-player World round-trips through encode/deco
   expect(s.enemies.length).toBeGreaterThan(0);
   expect(s.players).toHaveLength(2);
   expectClose(decodeSnapshot(encodeSnapshot(s)), s);
+});
+
+test("applySnapshot syncs the local player's own stats and the team kill count", () => {
+  const w = new World(silentAudio());
+  w.reset([{ slot: 0, name: "A" }, { slot: 1, name: "B" }]);
+  w.localSlot = 1;
+  const b = snap({ kills: 17, players: [player(0), player(1, { speed: 231, blaster: 3, nova: 2, pingCd: 1.5 })] });
+  applySnapshot(w, b, b, 1, 1);
+  expect(w.players[1].speed).toBeCloseTo(231);
+  expect(w.players[1].blaster).toBe(3);
+  expect(w.players[1].nova).toBe(2);
+  expect(w.players[1].pingCd).toBeCloseTo(1.5);
+  expect(w.kills).toBe(17);
+  expectClose(decodeSnapshot(encodeSnapshot(b)), b);
+});
+
+test("a reused enemy slot (new spawn) is not interpolated from the dead one", () => {
+  const w = new World(silentAudio());
+  const a = snap({ enemies: [enemy(3, { x: 0, spawnT: 5 })] });
+  const b = snap({ enemies: [enemy(3, { x: 900, spawnT: 0.02 })] });
+  applySnapshot(w, a, b, 0.25, 0);
+  expect(w.enemies[3].x).toBe(900);
+});
+
+test("a reused bullet/gem slot that jumped far is not interpolated", () => {
+  const w = new World(silentAudio());
+  const a = snap({ bullets: [{ i: 0, x: 0, y: 0, r: 5 }], gems: [{ i: 1, x: 0, y: 0, r: 7, heal: false }] });
+  const b = snap({ bullets: [{ i: 0, x: 800, y: 0, r: 5 }], gems: [{ i: 1, x: 0, y: 600, r: 7, heal: false }] });
+  applySnapshot(w, a, b, 0.5, 0);
+  expect(w.bullets[0].x).toBe(800);
+  expect(w.gems[1].y).toBe(600);
+  // A normal in-flight bullet still interpolates.
+  const c = snap({ bullets: [{ i: 0, x: 832, y: 0, r: 5 }] });
+  applySnapshot(w, b, c, 0.5, 0);
+  expect(w.bullets[0].x).toBeCloseTo(816);
 });

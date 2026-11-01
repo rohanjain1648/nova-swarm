@@ -124,7 +124,7 @@ npm --prefix server run dev                         # relay on ws://localhost:87
 VITE_RELAY_URL=ws://localhost:8787 npm run dev      # game, in a second terminal
 ```
 
-Open two browser windows: host in one, join with the code in the other. The two-browser smoke test does all of that automatically (starts its own relay on port 8788):
+Open two browser windows: host in one, join with the code in the other. The two-browser smoke test does all of that automatically (starts its own relay on a free port):
 
 ```bash
 npm run smoke:coop

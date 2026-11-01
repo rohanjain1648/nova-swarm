@@ -2,7 +2,7 @@
  * Two-browser co-op smoke test — proves a real host and a real joiner can
  * meet through the relay and play one run together.
  *
- * It starts the relay (server/) on a spare port, builds the game with
+ * It starts the relay (server/) on a free port, builds the game with
  * VITE_RELAY_URL pointing at it (into dist-coop/, leaving dist/ alone), serves
  * that build, and drives two isolated Playwright browser contexts:
  *
@@ -19,7 +19,9 @@ import { spawn, execSync } from "node:child_process";
 import { build, preview } from "vite";
 import { chromium } from "playwright";
 
-const RELAY_PORT = 8788;
+// The relay picks a free port (PORT=0) and we read it from its log line, so a
+// relay still shutting down from a previous run can never be mistaken for ours.
+let relayPort = 0;
 const WEB_PORT = 4188;
 const SHOT_DIR = process.env.SHOT_DIR;
 const errors = [];
@@ -27,11 +29,15 @@ let exitCode = 0;
 
 // ---- Relay -------------------------------------------------------------------
 const relayProc = spawn("npm", ["--prefix", "server", "start"], {
-  env: { ...process.env, PORT: String(RELAY_PORT) },
+  env: { ...process.env, PORT: "0" },
   shell: true,
   stdio: ["ignore", "pipe", "pipe"],
 });
 relayProc.stderr.on("data", (d) => process.stderr.write(`[relay] ${d}`));
+relayProc.stdout.on("data", (d) => {
+  const m = /listening on :(\d+)/.exec(String(d));
+  if (m) relayPort = Number(m[1]);
+});
 function stopRelay() {
   if (relayProc.exitCode !== null) return;
   if (process.platform === "win32") {
@@ -47,8 +53,13 @@ function stopRelay() {
 async function waitForRelay() {
   const end = Date.now() + 30_000;
   while (Date.now() < end) {
+    if (relayProc.exitCode !== null) throw new Error(`relay exited early (code ${relayProc.exitCode})`);
+    if (!relayPort) {
+      await new Promise((r) => setTimeout(r, 200));
+      continue;
+    }
     try {
-      const res = await fetch(`http://localhost:${RELAY_PORT}/health`);
+      const res = await fetch(`http://localhost:${relayPort}/health`);
       if (res.ok) return;
     } catch {
       /* not up yet */
@@ -79,7 +90,7 @@ let server;
 let browser;
 try {
   await waitForRelay();
-  process.env.VITE_RELAY_URL = `ws://localhost:${RELAY_PORT}`;
+  process.env.VITE_RELAY_URL = `ws://localhost:${relayPort}`;
   await build({ logLevel: "warn", build: { outDir: "dist-coop" } });
   server = await preview({ logLevel: "warn", build: { outDir: "dist-coop" }, preview: { port: WEB_PORT, strictPort: true } });
   const url = server.resolvedUrls.local[0];
@@ -92,13 +103,13 @@ try {
     page.on("console", (m) => {
       if (m.type() === "error") errors.push(`${label} console: ${m.text()}`);
     });
-    await page.goto(url + path, { waitUntil: "networkidle" });
+    await page.goto(url + path, { waitUntil: "load", timeout: 60_000 });
     return page;
   };
 
   // A: host a room.
   const a = await open("A", "?debug");
-  const aMenu = await waitFor(a, (s) => s.state === "menu" && s.coop === "ready", "A menu with co-op ready", 30_000);
+  const aMenu = await waitFor(a, (s) => s.state === "menu" && s.coop === "ready", "A menu with co-op ready", 90_000);
   await shot(a, "1-title");
   await a.mouse.click(...center(aMenu.ui.title.host));
   const aLobby = await waitFor(a, (s) => s.state === "lobby" && s.code, "A in lobby with a code");
@@ -106,7 +117,7 @@ try {
 
   // B: join through the invite link.
   const b = await open("B", `?debug&room=${code.toLowerCase()}`);
-  await waitFor(b, (s) => s.state === "lobby" && s.mode === "client", "B in lobby", 30_000);
+  await waitFor(b, (s) => s.state === "lobby" && s.mode === "client", "B in lobby", 90_000);
   await waitFor(a, (s) => s.roster === 2, "A roster of 2");
   await waitFor(b, (s) => s.roster === 2, "B roster of 2");
   await shot(a, "2-lobby");

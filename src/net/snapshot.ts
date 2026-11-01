@@ -27,6 +27,11 @@ export interface PlayerSnap {
   orbitAngle: number;
   pickupRadius: number;
   kills: number;
+  /** Build stats the client's own prediction and HUD read (upgrades only run on the host). */
+  speed: number;
+  blaster: number;
+  nova: number;
+  pingCd: number;
 }
 
 export interface EnemySnap {
@@ -55,6 +60,8 @@ export interface Snapshot {
   level: number;
   xp: number;
   xpToNext: number;
+  /** Team kill count. */
+  kills: number;
   /** Boss HP fraction, or -1 when no boss is alive. */
   bossHp: number;
   /** Bit per slot still choosing in an open level-up huddle. */
@@ -71,7 +78,9 @@ export interface Snapshot {
 }
 
 const KINDS: EnemyKind[] = ["grunt", "fast", "tank", "splitter", "shooter", "boss"];
-const VERSION = 1;
+const VERSION = 2;
+/** A pooled bullet/gem that moved further than this between snapshots is a recycled slot, not motion. */
+const REUSE_JUMP = 150;
 
 // ---- Capture --------------------------------------------------------------
 
@@ -95,6 +104,7 @@ export function captureSnapshot(w: World, seq: number, waitingMask: number, effe
     level: w.level,
     xp: w.xp,
     xpToNext: w.xpToNext,
+    kills: w.kills,
     bossHp: w.bossHpFraction ?? -1,
     waitingMask,
     gameOver: w.gameOver,
@@ -102,6 +112,7 @@ export function captureSnapshot(w: World, seq: number, waitingMask: number, effe
       slot: p.slot, active: p.active, x: p.x, y: p.y, vx: p.vx, vy: p.vy, facing: p.facing,
       hp: p.hp, maxHp: p.maxHp, downed: p.downed, reviveT: p.reviveT, invuln: p.invuln,
       orbital: p.orbital, orbitAngle: p.orbitAngle, pickupRadius: p.pickupRadius, kills: p.kills,
+      speed: p.speed, blaster: p.blaster, nova: p.nova, pingCd: p.pingCd,
     })),
     enemies,
     bullets: pool(w.bullets),
@@ -156,6 +167,7 @@ export function encodeSnapshot(s: Snapshot): Uint8Array {
   w.u16(s.level);
   w.f32(s.xp);
   w.f32(s.xpToNext);
+  w.u32(s.kills);
   w.f32(s.bossHp);
   w.u8(s.waitingMask);
   w.u8(s.gameOver ? 1 : 0);
@@ -164,8 +176,12 @@ export function encodeSnapshot(s: Snapshot): Uint8Array {
   for (const p of s.players) {
     w.u8(p.slot);
     w.u8((p.active ? 1 : 0) | (p.downed ? 2 : 0));
-    for (const v of [p.x, p.y, p.vx, p.vy, p.facing, p.hp, p.maxHp, p.reviveT, p.invuln, p.orbitAngle, p.pickupRadius]) w.f32(v);
+    for (const v of [p.x, p.y, p.vx, p.vy, p.facing, p.hp, p.maxHp, p.reviveT, p.invuln, p.orbitAngle, p.pickupRadius, p.speed, p.pingCd]) {
+      w.f32(v);
+    }
     w.u8(p.orbital);
+    w.u8(p.blaster);
+    w.u8(p.nova);
     w.u16(p.kills);
   }
 
@@ -229,6 +245,7 @@ export function decodeSnapshot(buf: ArrayBuffer | Uint8Array): Snapshot {
     level: r.u16(),
     xp: r.f32(),
     xpToNext: r.f32(),
+    kills: r.u32(),
     bossHp: r.f32(),
     waitingMask: r.u8(),
     gameOver: r.u8() === 1,
@@ -245,12 +262,12 @@ export function decodeSnapshot(buf: ArrayBuffer | Uint8Array): Snapshot {
   for (let n = r.u8(); n > 0; n--) {
     const slot = r.u8();
     const flags = r.u8();
-    const [x, y, vx, vy, facing, hp, maxHp, reviveT, invuln, orbitAngle, pickupRadius] =
-      Array.from({ length: 11 }, () => r.f32());
+    const [x, y, vx, vy, facing, hp, maxHp, reviveT, invuln, orbitAngle, pickupRadius, speed, pingCd] =
+      Array.from({ length: 13 }, () => r.f32());
     s.players.push({
       slot, active: (flags & 1) !== 0, downed: (flags & 2) !== 0,
-      x, y, vx, vy, facing, hp, maxHp, reviveT, invuln, orbitAngle, pickupRadius,
-      orbital: r.u8(), kills: r.u16(),
+      x, y, vx, vy, facing, hp, maxHp, reviveT, invuln, orbitAngle, pickupRadius, speed, pingCd,
+      orbital: r.u8(), blaster: r.u8(), nova: r.u8(), kills: r.u16(),
     });
   }
 
@@ -302,6 +319,7 @@ export function applySnapshot(w: World, a: Snapshot, b: Snapshot, t: number, loc
   w.level = b.level;
   w.xp = b.xp;
   w.xpToNext = b.xpToNext;
+  w.kills = b.kills;
   w.gameOver = b.gameOver;
   w.bossHpOverride = b.bossHp < 0 ? null : b.bossHp;
 
@@ -329,6 +347,10 @@ export function applySnapshot(w: World, a: Snapshot, b: Snapshot, t: number, loc
     p.orbitAngle = pb.orbitAngle;
     p.pickupRadius = pb.pickupRadius;
     p.kills = pb.kills;
+    p.speed = pb.speed;
+    p.blaster = pb.blaster;
+    p.nova = pb.nova;
+    p.pingCd = pb.pingCd;
   }
   for (const p of w.players) if (!seenSlots.has(p.slot)) p.active = false;
 
@@ -338,7 +360,9 @@ export function applySnapshot(w: World, a: Snapshot, b: Snapshot, t: number, loc
   for (const eb of b.enemies) {
     const e = w.enemies[eb.i];
     const prev = ea.get(eb.i);
-    const from = prev && prev.kind === eb.kind ? prev : eb;
+    // A slot the host recycled for a fresh spawn restarts its spawn timer:
+    // draw it where it is, not sliding over from the enemy that died there.
+    const from = prev && prev.kind === eb.kind && eb.spawnT >= prev.spawnT ? prev : eb;
     const def = eb.kind === "boss" ? BOSS : ENEMIES[eb.kind];
     e.dead = false;
     e.kind = eb.kind;
@@ -362,7 +386,7 @@ export function applySnapshot(w: World, a: Snapshot, b: Snapshot, t: number, loc
   resetPool(w.gems, maxIndex(b.gems), newGem);
   for (const gb of b.gems) {
     const g = w.gems[gb.i];
-    const from = ga.get(gb.i) ?? gb;
+    const from = sameEntity(ga.get(gb.i), gb);
     g.dead = false;
     g.x = lerp(from.x, gb.x, t);
     g.y = lerp(from.y, gb.y, t);
@@ -383,12 +407,18 @@ function applyPool<T extends { dead: boolean; x: number; y: number; radius: numb
   resetPool(arr, maxIndex(b), make);
   for (const sb of b) {
     const v = arr[sb.i];
-    const from = prev.get(sb.i) ?? sb;
+    const from = sameEntity(prev.get(sb.i), sb);
     v.dead = false;
     v.x = lerp(from.x, sb.x, t);
     v.y = lerp(from.y, sb.y, t);
     v.radius = sb.r;
   }
+}
+
+/** `a` if it is plausibly the same pooled entity as `b` one snapshot later, else `b` (no interpolation). */
+function sameEntity<T extends PoolSnap>(a: T | undefined, b: T): T {
+  if (!a) return b;
+  return Math.abs(b.x - a.x) > REUSE_JUMP || Math.abs(b.y - a.y) > REUSE_JUMP ? b : a;
 }
 
 const newEnemy = (): Enemy => ({

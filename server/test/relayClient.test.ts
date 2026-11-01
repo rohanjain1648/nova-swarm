@@ -96,3 +96,29 @@ test("wakeRelay resolves true against /health and false against a closed port", 
   expect(await wakeRelay(deadUrl, 500)).toBe(false);
   expect(Date.now() - t0).toBeLessThan(2500);
 });
+
+test("the relay drops a silently dead host (missed heartbeat) and tells clients", async () => {
+  const hb = await createRelayServer(0, { heartbeatMs: 150 });
+  const hbUrl = `ws://localhost:${hb.port}`;
+  try {
+    // A host whose socket never answers pings — like a phone that lost signal.
+    const deadHost = new WebSocket(hbUrl, { autoPong: false });
+    await new Promise((r) => deadHost.once("open", r));
+    deadHost.send(JSON.stringify({ t: "host", name: "H" }));
+    const code: string = await new Promise((r) =>
+      deadHost.on("message", (d) => {
+        const m = JSON.parse(d.toString());
+        if (m.t === "welcome") r(m.code);
+      }),
+    );
+    const guest = new RelayClient(hbUrl, Ctor);
+    clients.push(guest);
+    const got: RelayToClient[] = [];
+    guest.onMessage = (m) => got.push(m);
+    await guest.join(code, "G");
+    await until(() => got.some((m) => m.t === "closed"), 3000);
+    expect(hb.rooms.roomCount).toBe(0);
+  } finally {
+    await hb.close();
+  }
+});

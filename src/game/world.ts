@@ -183,6 +183,7 @@ export class World {
     this.flashT = 0;
     this.trauma = 0;
     this.effectBuf = [];
+    this.bossHpOverride = null;
   }
 
   // ---- Pool helpers -------------------------------------------------------
