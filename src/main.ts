@@ -275,7 +275,7 @@ function render(): void {
     return;
   }
 
-  drawHud(hudCtx, world, audio.muted, W, H);
+  drawHud(hudCtx, world, audio.muted, W, H, scene3d.camera);
   drawScreenFlash(t);
 
   if (state === "levelup") {

@@ -1,6 +1,8 @@
+import * as THREE from "three";
 import { clamp } from "../core/math";
-import { PALETTE } from "../game/config";
+import { COOP, PALETTE } from "../game/config";
 import type { World } from "../game/world";
+import type { Rect } from "./screens";
 
 export const formatTime = (sec: number): string => {
   const m = Math.floor(sec / 60);
@@ -39,8 +41,20 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
+/** Touch-friendly ping button (co-op only), bottom-right above the safe area. */
+export function pingButtonRect(w: number, h: number): Rect {
+  return { x: w - 16 - 64, y: h - 16 - 64, w: 64, h: 64 };
+}
+
 /** Draw the in-game HUD in screen space (no camera transform). */
-export function drawHud(ctx: CanvasRenderingContext2D, world: World, muted: boolean, w: number, h: number): void {
+export function drawHud(
+  ctx: CanvasRenderingContext2D,
+  world: World,
+  muted: boolean,
+  w: number,
+  h: number,
+  camera?: THREE.Camera,
+): void {
   const p = world.player;
   const pad = 16;
 
@@ -111,5 +125,109 @@ export function drawHud(ctx: CanvasRenderingContext2D, world: World, muted: bool
   ctx.font = "700 13px 'Segoe UI', system-ui, sans-serif";
   ctx.fillStyle = "rgba(230,244,255,0.55)";
   ctx.fillText(muted ? "🔇 M" : "🔊 M", w - pad, 14);
-  ctx.fillText("ESC pause", w - pad, 34);
+  ctx.fillText(world.players.length > 1 ? "ESC menu · G ping" : "ESC pause", w - pad, 34);
+
+  if (world.players.length > 1) {
+    drawTeammates(ctx, world, pad, 60);
+    if (camera) drawEdgeArrows(ctx, world, camera, w, h);
+    drawPingButton(ctx, world, w, h);
+  }
+}
+
+/** Teammate rows under your HP bar: name in slot colour, mini HP bar, DOWN tag. */
+function drawTeammates(ctx: CanvasRenderingContext2D, world: World, x: number, y: number): void {
+  let row = 0;
+  for (const p of world.players) {
+    if (!p.active || p.slot === world.localSlot) continue;
+    const ry = y + row * 22;
+    const color = COOP.slotColors[p.slot] ?? PALETTE.player;
+    ctx.font = "800 12px 'Segoe UI', system-ui, sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = color;
+    ctx.fillText(p.name, x, ry + 5);
+    if (p.downed) {
+      ctx.fillStyle = PALETTE.danger;
+      ctx.fillText(`DOWN ${Math.round(p.reviveT * 100)}%`, x + 96, ry + 5);
+    } else {
+      bar(ctx, x + 96, ry, 90, 10, p.hp / p.maxHp, color);
+    }
+    row++;
+  }
+}
+
+const proj = new THREE.Vector3();
+
+/** Arrows on the screen edge toward teammates and pings that are off-screen. */
+function drawEdgeArrows(ctx: CanvasRenderingContext2D, world: World, camera: THREE.Camera, w: number, h: number): void {
+  const targets: { x: number; y: number; color: string; ping: boolean }[] = [];
+  for (const p of world.players) {
+    if (p.active && p.slot !== world.localSlot) {
+      targets.push({ x: p.x, y: p.y, color: COOP.slotColors[p.slot] ?? PALETTE.player, ping: false });
+    }
+  }
+  for (const pg of world.pings) targets.push({ x: pg.x, y: pg.y, color: COOP.slotColors[pg.slot] ?? PALETTE.player, ping: true });
+
+  const margin = 28;
+  for (const t of targets) {
+    proj.set(t.x, 0, t.y).project(camera);
+    let sx = (proj.x * 0.5 + 0.5) * w;
+    let sy = (1 - (proj.y * 0.5 + 0.5)) * h;
+    if (proj.z > 1) {
+      // Behind the camera: mirror so the arrow still points the right way.
+      sx = w - sx;
+      sy = h - sy;
+    }
+    const onScreen = proj.z <= 1 && sx >= margin && sx <= w - margin && sy >= margin && sy <= h - margin;
+    if (onScreen) continue;
+    const cx = w / 2;
+    const cy = h / 2;
+    const a = Math.atan2(sy - cy, sx - cx);
+    // Push the point out from the centre until it meets the inset screen rectangle.
+    const kx = (w / 2 - margin) / Math.max(1e-6, Math.abs(Math.cos(a)));
+    const ky = (h / 2 - margin) / Math.max(1e-6, Math.abs(Math.sin(a)));
+    const k = Math.min(kx, ky);
+    const ax = cx + Math.cos(a) * k;
+    const ay = cy + Math.sin(a) * k;
+
+    ctx.save();
+    ctx.translate(ax, ay);
+    ctx.rotate(a);
+    ctx.fillStyle = t.color;
+    ctx.globalAlpha = t.ping ? 0.95 : 0.8;
+    ctx.beginPath();
+    ctx.moveTo(14, 0);
+    ctx.lineTo(-8, -10);
+    ctx.lineTo(-8, 10);
+    ctx.closePath();
+    ctx.fill();
+    if (t.ping) {
+      ctx.rotate(-a);
+      ctx.font = "900 14px 'Segoe UI', system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("!", -Math.cos(a) * 22, -Math.sin(a) * 22);
+    }
+    ctx.restore();
+  }
+}
+
+function drawPingButton(ctx: CanvasRenderingContext2D, world: World, w: number, h: number): void {
+  const r = pingButtonRect(w, h);
+  const ready = world.player.pingCd <= 0 && !world.player.downed;
+  ctx.globalAlpha = ready ? 0.9 : 0.35;
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+  roundRect(ctx, r.x, r.y, r.w, r.h, 32);
+  ctx.fill();
+  ctx.strokeStyle = COOP.slotColors[world.localSlot] ?? PALETTE.player;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = PALETTE.text;
+  ctx.font = "900 26px 'Segoe UI', system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("!", r.x + r.w / 2, r.y + r.h / 2 - 4);
+  ctx.font = "700 10px 'Segoe UI', system-ui, sans-serif";
+  ctx.fillText("PING", r.x + r.w / 2, r.y + r.h - 14);
+  ctx.globalAlpha = 1;
 }
