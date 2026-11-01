@@ -5,3 +5,5 @@ dist/
 .vscode/
 .vercel/
 npm-debug.log*
+
+nova-mobile

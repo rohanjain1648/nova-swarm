@@ -11,7 +11,7 @@ export class Player {
   y = 0;
   vx = 0;
   vy = 0;
-  facing = 0; // radians, movement heading (player-steered) — drives the 3D model's body rotation
+  facing = 0; // radians, heading (cursor aim, else movement) — drives the 3D model's body rotation
 
   hp: number;
   invuln = 0; // i-frame timer

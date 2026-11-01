@@ -148,20 +148,20 @@ export const BOSS: EnemyDef = {
 
 export const DIRECTOR = {
   /** Seconds between the escalating "phase" bumps. */
-  baseSpawnInterval: 1.1, // seconds between spawn ticks at t=0
-  minSpawnInterval: 0.32,
+  baseSpawnInterval: 2.2, // seconds between spawn ticks at t=0 (half frequency)
+  minSpawnInterval: 0.64,
   spawnRampSeconds: 300, // interval reaches min around here
   /** Enemy stat scaling with time. */
   hpScalePerMin: 0.55, // +55% hp per minute
   speedScalePerMin: 0.08,
   batchBase: 1,
-  batchGrowthSeconds: 70, // batch size grows by 1 every this many seconds
+  batchGrowthSeconds: 140, // batch size grows by 1 every this many seconds (half growth rate)
   bossEverySeconds: 120,
   // Each enemy is now a skinned, animated GLB robot rather than a flat neon
   // polygon — capped lower than the 2D build so hundreds of simultaneous
   // skeleton updates don't tank the frame rate. Fewer, denser robots still
   // reads as a swarm thanks to lighting/bloom.
-  maxEnemies: 140,
+  maxEnemies: 70,
 };
 
 export const PLAYER = {

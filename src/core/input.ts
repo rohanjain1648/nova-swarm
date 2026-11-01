@@ -29,6 +29,10 @@ export class Input {
   private clickY = 0;
 
   readonly move = { x: 0, y: 0 };
+  /** Cursor aim (mouse held): unit direction from the robot (screen centre). */
+  readonly aim = { x: 1, y: 0, active: false };
+  /** True when the current move vector came from a touch drag. */
+  private moveFromTouch = false;
 
   constructor(target: HTMLElement) {
     addEventListener("keydown", this.onKeyDown, { passive: false });
@@ -144,23 +148,34 @@ export class Input {
     if (this.isDown("KeyW", "ArrowUp")) y -= 1;
     if (this.isDown("KeyS", "ArrowDown")) y += 1;
 
-    if (x === 0 && y === 0 && this.pointerActive) {
-      // Virtual stick. Touch: relative to where the finger went down.
-      // Mouse: relative to the screen centre (the camera keeps the robot
-      // there), so holding the button steers the robot toward the cursor —
-      // click in a direction and the robot moves that way.
-      const originX = this.usingTouch ? this.pointerOriginX : innerWidth / 2;
-      const originY = this.usingTouch ? this.pointerOriginY : innerHeight / 2;
-      const dx = this.pointerX - originX;
-      const dy = this.pointerY - originY;
+    this.moveFromTouch = false;
+    if (x === 0 && y === 0 && this.pointerActive && this.usingTouch) {
+      // Touch virtual stick: vector from where the finger went down.
+      // (Mouse never moves the robot — the cursor is aim-only, see below.)
+      const dx = this.pointerX - this.pointerOriginX;
+      const dy = this.pointerY - this.pointerOriginY;
       const l = len(dx, dy);
-      const dead = this.usingTouch ? 8 : 24;
-      const full = this.usingTouch ? 70 : 150;
+      const dead = 8;
+      const full = 70;
       if (l > dead) {
         const mag = clamp((l - dead) / (full - dead), 0, 1);
         x = (dx / l) * mag;
         y = (dy / l) * mag;
+        this.moveFromTouch = true;
       }
+    }
+
+    // Mouse aim: while the button is held, the aim vector points from the
+    // screen centre (the camera keeps the robot there) toward the cursor.
+    this.aim.active = this.pointerActive && !this.usingTouch;
+    if (this.aim.active) {
+      const dx = this.pointerX - innerWidth / 2;
+      const dy = this.pointerY - innerHeight / 2;
+      const l = len(dx, dy);
+      if (l > 4) {
+        this.aim.x = dx / l;
+        this.aim.y = dy / l;
+      } // cursor on top of the robot: keep the last aim direction
     }
 
     // Normalize diagonals for keyboard so you don't move faster on the angle.
@@ -171,5 +186,10 @@ export class Input {
     }
     this.move.x = x;
     this.move.y = y;
+  }
+
+  /** True while a touch drag is driving movement (mobile fires while moving). */
+  get touchSteering(): boolean {
+    return this.moveFromTouch;
   }
 }

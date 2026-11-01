@@ -173,16 +173,18 @@ export class World {
     this.updateEnemies(dt);
     this.grid.rebuild(this.enemies);
 
-    // The robot obeys manual input only: it faces the direction being steered
-    // (keyboard or held click), holds its last heading when idle, and the
-    // blaster fires along that heading — only while the player is steering.
-    // No input → no movement, no blaster fire.
+    // Twin-input control: keys move the robot; the held cursor only turns it
+    // and fires — it never moves it. Aim wins over movement for facing, and
+    // with no input at all the robot holds heading and stays silent. Touch
+    // drag (mobile, single input) both moves and fires.
     const steering = input.move.x !== 0 || input.move.y !== 0;
-    if (steering) {
+    if (input.aim.active) {
+      this.player.facing = Math.atan2(input.aim.y, input.aim.x);
+    } else if (steering) {
       this.player.facing = Math.atan2(input.move.y, input.move.x);
     }
 
-    this.fireWeapons(dt, steering);
+    this.fireWeapons(dt, input.aim.active || input.touchSteering);
     this.updateBullets(dt);
     this.updateEnemyBullets(dt);
     this.contactDamage();
