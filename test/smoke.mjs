@@ -49,7 +49,11 @@ try {
   await page.mouse.click(640, 500); // start (Play button)
   await page.waitForTimeout(300);
 
-  // Play ~22s: ping-pong to survive + collect XP, auto-pick upgrades.
+  // Play ~22s: ping-pong to survive + collect XP, auto-pick upgrades. The
+  // blaster only fires while the mouse is held (cursor = aim), so hold it
+  // off-centre for the whole session.
+  await page.mouse.move(900, 400);
+  await page.mouse.down();
   let dir = "d";
   await page.keyboard.down(dir);
   let sawLevelUp = false;

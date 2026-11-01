@@ -1,0 +1,14 @@
+# Render blueprint for the NOVA SWARM co-op relay (Render -> New -> Blueprint).
+# The static game itself stays on Vercel; point VITE_RELAY_URL there at
+# wss://<this service>.onrender.com.
+services:
+  - type: web
+    name: novaswarm-relay
+    runtime: node
+    plan: free
+    buildCommand: npm --prefix server ci
+    startCommand: npm --prefix server start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "22"

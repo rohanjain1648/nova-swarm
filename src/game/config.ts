@@ -173,6 +173,29 @@ export const PLAYER = {
   baseRegen: 0, // hp/sec, raised by upgrades
 };
 
+/** Co-op tuning. Every multiplier is written so a 1-player squad gets exactly 1. */
+export const COOP = {
+  maxPlayers: 4,
+  /** Spawn rate x(1 + spawnPerExtra*(n-1)), enemy HP x(1 + hpPerExtra*(n-1)). */
+  spawnPerExtra: 0.6,
+  hpPerExtra: 0.3,
+  reviveRange: 70,
+  reviveSeconds: 3,
+  reviveHpFrac: 0.3,
+  huddleTimeoutSec: 15,
+  pingLifeSec: 4,
+  pingCooldownSec: 2,
+  snapshotHz: 20,
+  poseHz: 30,
+  /** Largest jump (in seconds of top speed) a remote pose may make. */
+  poseMaxLagSec: 0.25,
+  interpDelayMs: 100,
+  hostPausedMs: 1500,
+  reconnectGraceMs: 10_000,
+  /** P1 keeps the classic cyan; none of these match an enemy tint. */
+  slotColors: ["#3fe9ff", "#5dffb0", "#5b7bff", "#f2f5ff"],
+} as const;
+
 /** XP required to go from level n to n+1. */
 export const xpForLevel = (level: number): number =>
   Math.floor(5 + level * 6 + level * level * 1.4);

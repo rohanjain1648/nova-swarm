@@ -6,7 +6,8 @@
  */
 import * as THREE from "three";
 import { clamp } from "../core/math";
-import { PALETTE } from "../game/config";
+import { COOP, PALETTE } from "../game/config";
+import type { Player } from "../game/player";
 import type { World } from "../game/world";
 import { RobotFactory, type RobotHandle } from "./robots";
 import { createFxPools, RingPool, type FxPools } from "./fx";
@@ -26,10 +27,21 @@ export interface FloatLabel {
   size: number;
 }
 
+const ORBITALS_PER_PLAYER = 8;
+
+/** Per-slot visuals for one player robot. */
+interface PlayerVisual {
+  robot: RobotHandle;
+  orbitals: THREE.Mesh[];
+  /** Faint full ring + a bright arc whose draw range grows with revive progress. */
+  reviveBg: THREE.Mesh;
+  reviveArc: THREE.Mesh;
+}
+
 export class WorldView {
-  private player!: RobotHandle;
+  private readonly playerVisuals: PlayerVisual[] = [];
   private readonly robots: RobotHandle[] = [];
-  private readonly orbitals: THREE.Mesh[] = [];
+  private readonly pingBeams: THREE.Mesh[] = [];
   private pickupRing!: THREE.Mesh;
   private novaRings!: RingPool;
   private fx!: FxPools;
@@ -42,23 +54,17 @@ export class WorldView {
     private readonly scene: THREE.Scene,
     private readonly factory: RobotFactory,
   ) {
-    this.player = factory.create();
-    this.player.setTint(hexToNum(PALETTE.player));
-    this.player.root.castShadow = true;
-    scene.add(this.player.root);
+    for (let slot = 0; slot < COOP.maxPlayers; slot++) this.playerVisuals.push(this.createPlayerVisual(slot));
 
-    for (let i = 0; i < 8; i++) {
-      const geo = new THREE.IcosahedronGeometry(9, 0);
-      const mat = new THREE.MeshStandardMaterial({
-        color: hexToNum(PALETTE.orbital),
-        emissive: hexToNum(PALETTE.orbital),
-        emissiveIntensity: 1.4,
-        toneMapped: false,
-      });
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.visible = false;
-      scene.add(mesh);
-      this.orbitals.push(mesh);
+    // Ping beams: at most one live ping per player per cooldown window.
+    for (let i = 0; i < COOP.maxPlayers * 2; i++) {
+      const beam = new THREE.Mesh(
+        new THREE.CylinderGeometry(6, 6, 260, 12, 1, true),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, toneMapped: false, depthWrite: false }),
+      );
+      beam.visible = false;
+      scene.add(beam);
+      this.pingBeams.push(beam);
     }
 
     const ringGeo = new THREE.RingGeometry(1, 1.04, 48);
@@ -84,6 +90,44 @@ export class WorldView {
     });
   }
 
+  private createPlayerVisual(slot: number): PlayerVisual {
+    const color = hexToNum(COOP.slotColors[slot]);
+    const robot = this.factory.create();
+    robot.setTint(color);
+    robot.root.castShadow = true;
+    robot.root.visible = false;
+    this.scene.add(robot.root);
+
+    const orbitals: THREE.Mesh[] = [];
+    for (let i = 0; i < ORBITALS_PER_PLAYER; i++) {
+      const mesh = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(9, 0),
+        new THREE.MeshStandardMaterial({
+          color: hexToNum(PALETTE.orbital),
+          emissive: hexToNum(PALETTE.orbital),
+          emissiveIntensity: 1.4,
+          toneMapped: false,
+        }),
+      );
+      mesh.visible = false;
+      this.scene.add(mesh);
+      orbitals.push(mesh);
+    }
+
+    const flatRing = (opacity: number): THREE.Mesh => {
+      const m = new THREE.Mesh(
+        new THREE.RingGeometry(COOP.reviveRange - 6, COOP.reviveRange, 64, 1, -Math.PI / 2, Math.PI * 2),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, toneMapped: false }),
+      );
+      m.rotation.x = -Math.PI / 2;
+      m.position.y = 2;
+      m.visible = false;
+      this.scene.add(m);
+      return m;
+    };
+    return { robot, orbitals, reviveBg: flatRing(0.18), reviveArc: flatRing(0.9) };
+  }
+
   /** Call once the GLB has loaded to size robots sensibly relative to the arena. */
   calibrateScale(desiredPlayerHeight: number): void {
     const natural = this.factory.naturalHeight;
@@ -104,38 +148,27 @@ export class WorldView {
     this.floatLabels.length = 0;
     const p = world.player;
 
-    // --- Player -------------------------------------------------------
-    const moving = Math.hypot(p.vx, p.vy) > 12;
-    this.player.root.position.set(p.x, 0, p.y);
-    this.player.root.rotation.y = FORWARD_OFFSET - p.facing;
-    this.player.root.scale.setScalar(this.robotBaseScale);
-    if (world.gameOver) {
-      this.player.play("Death", 0.2);
-      this.player.root.visible = true;
-    } else {
-      this.player.play(moving ? "Running" : "Idle", 0.15);
-      this.player.setSpeed(moving ? 1.15 : 1);
-      const blinking = p.invuln > 0 && Math.floor(world.time * 20) % 2 === 0;
-      this.player.root.visible = !blinking;
+    // --- Players --------------------------------------------------------
+    for (let slot = 0; slot < this.playerVisuals.length; slot++) {
+      this.syncPlayer(world, this.playerVisuals[slot], world.players[slot], slot === world.localSlot, dt);
     }
-    this.player.update(dt);
 
-    // Pickup radius ring + orbitals only make sense mid-run.
-    this.pickupRing.visible = !world.gameOver;
+    // Pickup radius ring is only drawn for your own robot, mid-run.
+    this.pickupRing.visible = !world.gameOver && !p.downed;
     this.pickupRing.position.x = p.x;
     this.pickupRing.position.z = p.y;
     this.pickupRing.scale.setScalar(p.pickupRadius);
 
-    const orbitalCount = world.gameOver ? 0 : p.orbitalCount;
-    for (let i = 0; i < this.orbitals.length; i++) {
-      if (i < orbitalCount) {
-        const a = p.orbitAngle + (i / orbitalCount) * Math.PI * 2;
-        this.orbitals[i].visible = true;
-        this.orbitals[i].position.set(p.x + Math.cos(a) * p.orbitalRadius, 26, p.y + Math.sin(a) * p.orbitalRadius);
-        this.orbitals[i].rotation.y += dt * 4;
-      } else {
-        this.orbitals[i].visible = false;
-      }
+    // --- Pings ----------------------------------------------------------
+    for (let i = 0; i < this.pingBeams.length; i++) {
+      const beam = this.pingBeams[i];
+      const ping = world.pings[i];
+      beam.visible = !!ping;
+      if (!ping) continue;
+      beam.position.set(ping.x, 130, ping.y);
+      const mat = beam.material as THREE.MeshBasicMaterial;
+      mat.color.setHex(hexToNum(COOP.slotColors[ping.slot] ?? PALETTE.player));
+      mat.opacity = 0.55 * clamp(ping.life / COOP.pingLifeSec, 0, 1);
     }
 
     // --- Enemies --------------------------------------------------------
@@ -149,7 +182,8 @@ export class WorldView {
       }
       h.root.visible = true;
       h.root.position.set(e.x, 0, e.y);
-      const angle = Math.atan2(p.y - e.y, p.x - e.x);
+      const target = nearestActive(world.players, e.x, e.y) ?? p;
+      const angle = Math.atan2(target.y - e.y, target.x - e.x);
       h.root.rotation.y = FORWARD_OFFSET - angle;
 
       const spawnIn = e.spawnT < 0.4;
@@ -163,6 +197,65 @@ export class WorldView {
     }
 
     this.syncFx(world);
+  }
+
+  private syncPlayer(world: World, v: PlayerVisual, p: Player | undefined, isLocal: boolean, dt: number): void {
+    const shown = !!p && p.active;
+    v.robot.root.visible = shown;
+    v.reviveBg.visible = v.reviveArc.visible = shown && p.downed && !world.gameOver;
+    if (!shown) {
+      for (const o of v.orbitals) o.visible = false;
+      return;
+    }
+
+    const r = v.robot;
+    const moving = Math.hypot(p.vx, p.vy) > 12;
+    r.root.position.set(p.x, 0, p.y);
+    r.root.rotation.y = FORWARD_OFFSET - p.facing;
+    r.root.scale.setScalar(this.robotBaseScale);
+    if (world.gameOver || p.downed) {
+      r.play("Death", 0.2);
+    } else {
+      r.play(moving ? "Running" : "Idle", 0.15);
+      r.setSpeed(moving ? 1.15 : 1);
+      const blinking = p.invuln > 0 && Math.floor(world.time * 20) % 2 === 0;
+      r.root.visible = !blinking;
+    }
+    r.update(dt);
+
+    if (p.downed) {
+      for (const ring of [v.reviveBg, v.reviveArc]) ring.position.set(p.x, 2, p.y);
+      // RingGeometry with one radial segment indexes 6 per angular segment.
+      const total = v.reviveArc.geometry.index!.count;
+      v.reviveArc.geometry.setDrawRange(0, Math.floor((total / 6) * clamp(p.reviveT, 0, 1)) * 6);
+    }
+
+    // Orbitals only make sense mid-run.
+    const orbitalCount = world.gameOver || p.downed ? 0 : p.orbitalCount;
+    for (let i = 0; i < v.orbitals.length; i++) {
+      const o = v.orbitals[i];
+      if (i < orbitalCount) {
+        const a = p.orbitAngle + (i / orbitalCount) * Math.PI * 2;
+        o.visible = true;
+        o.position.set(p.x + Math.cos(a) * p.orbitalRadius, 26, p.y + Math.sin(a) * p.orbitalRadius);
+        o.rotation.y += dt * 4;
+      } else {
+        o.visible = false;
+      }
+    }
+
+    // Teammates get a name tag (yours would just cover your robot).
+    if (!isLocal && world.players.length > 1) {
+      this.floatLabels.push({
+        x: p.x,
+        y: 150,
+        z: p.y,
+        text: p.downed ? `${p.name} · DOWN` : p.name,
+        color: COOP.slotColors[p.slot] ?? PALETTE.player,
+        alpha: 0.95,
+        size: 14,
+      });
+    }
   }
 
   private syncFx(world: World): void {
@@ -236,4 +329,19 @@ export class WorldView {
       });
     }
   }
+}
+
+/** Nearest active, not-downed player — the one an enemy is chasing. */
+function nearestActive(players: readonly Player[], x: number, y: number): Player | null {
+  let best: Player | null = null;
+  let bestD = Infinity;
+  for (const p of players) {
+    if (!p.active || p.downed) continue;
+    const d = (p.x - x) ** 2 + (p.y - y) ** 2;
+    if (d < bestD) {
+      bestD = d;
+      best = p;
+    }
+  }
+  return best;
 }

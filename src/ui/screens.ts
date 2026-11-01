@@ -1,7 +1,6 @@
 import { BOSS, ENEMIES, PALETTE } from "../game/config";
 import type { EnemyKind } from "../game/config";
-import type { Upgrade } from "../game/upgrades";
-import type { World } from "../game/world";
+import type { UpgradeCard } from "../game/upgrades";
 import type { RunStats } from "../game/world";
 import { formatTime } from "./hud";
 
@@ -15,7 +14,7 @@ export interface Rect {
 export const pointInRect = (px: number, py: number, r: Rect): boolean =>
   px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
 
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
+export function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
   const rr = Math.min(r, w / 2, h / 2);
   ctx.beginPath();
   ctx.moveTo(x + rr, y);
@@ -26,7 +25,7 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
-function dim(ctx: CanvasRenderingContext2D, w: number, h: number, alpha: number): void {
+export function dim(ctx: CanvasRenderingContext2D, w: number, h: number, alpha: number): void {
   ctx.fillStyle = `rgba(3,4,8,${alpha})`;
   ctx.fillRect(0, 0, w, h);
 }
@@ -38,7 +37,7 @@ function dim(ctx: CanvasRenderingContext2D, w: number, h: number, alpha: number)
  * loop needed. This guards against real-device font-metric variance that a
  * fixed `size = f(viewportWidth)` formula can't account for.
  */
-function fitFontSize(ctx: CanvasRenderingContext2D, text: string, weight: number, maxWidth: number, maxSize: number, minSize = 10): number {
+export function fitFontSize(ctx: CanvasRenderingContext2D, text: string, weight: number, maxWidth: number, maxSize: number, minSize = 10): number {
   ctx.font = `${weight} ${maxSize}px 'Segoe UI', system-ui, sans-serif`;
   const measured = ctx.measureText(text).width;
   if (measured <= maxWidth || measured === 0) return maxSize;
@@ -46,7 +45,7 @@ function fitFontSize(ctx: CanvasRenderingContext2D, text: string, weight: number
 }
 
 /** Big pulsing title text with an additive glow pass, auto-shrunk to always fit `maxWidth`. */
-function neonTitle(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxSize: number, time: number, maxWidth: number): void {
+export function neonTitle(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxSize: number, time: number, maxWidth: number): void {
   const size = fitFontSize(ctx, text, 900, maxWidth, maxSize);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -86,6 +85,37 @@ export function titlePlayButtonRect(w: number, h: number): Rect {
   const panel = titlePanelRect(w, h);
   return { x: w / 2 - bw / 2, y: panel.y + panel.h + 48, w: bw, h: 56 };
 }
+
+/** How much the title's panel-through-buttons block is shrunk on short viewports. */
+const titleScale = (h: number): number => Math.min(1, Math.max(0.6, h / 760));
+
+/**
+ * Screen-space bounds of the three title buttons. Solo sits exactly where the
+ * old PLAY button did; Host/Join share a row beneath it. All three are laid
+ * out pre-scale and mapped through the same transform `drawTitle` draws with,
+ * so hit-testing matches what's on screen at any viewport height.
+ */
+export function titleButtonRects(w: number, h: number): { solo: Rect; host: Rect; join: Rect } {
+  const play = titlePlayButtonRect(w, h);
+  const panelTop = titlePanelRect(w, h).y;
+  const s = titleScale(h);
+  const gap = 12;
+  const half = (play.w - gap) / 2;
+  const rowY = play.y + play.h + gap;
+  const map = (r: Rect): Rect => ({
+    x: w / 2 + (r.x - w / 2) * s,
+    y: panelTop + (r.y - panelTop) * s,
+    w: r.w * s,
+    h: r.h * s,
+  });
+  return {
+    solo: map(play),
+    host: map({ x: play.x, y: rowY, w: half, h: 48 }),
+    join: map({ x: play.x + half + gap, y: rowY, w: half, h: 48 }),
+  };
+}
+
+export type CoopAvailability = "ready" | "waking" | "unavailable";
 
 const ENEMY_LABELS: Record<EnemyKind, string> = {
   grunt: "Grunt",
@@ -154,7 +184,14 @@ function drawLegendRow(ctx: CanvasRenderingContext2D, w: number, y: number, sect
   }
 }
 
-function drawButton(ctx: CanvasRenderingContext2D, r: Rect, label: string, time: number, color: string = PALETTE.player): void {
+export function drawButton(
+  ctx: CanvasRenderingContext2D,
+  r: Rect,
+  label: string,
+  time: number,
+  color: string = PALETTE.player,
+  fontPx = 20,
+): void {
   const pulse = 0.5 + Math.sin(time * 4) * 0.5;
   ctx.save();
   ctx.globalAlpha = 0.9;
@@ -166,7 +203,7 @@ function drawButton(ctx: CanvasRenderingContext2D, r: Rect, label: string, time:
   ctx.stroke();
   ctx.restore();
   ctx.fillStyle = "#eafcff";
-  ctx.font = "800 20px 'Segoe UI', system-ui, sans-serif";
+  ctx.font = `800 ${fontPx}px 'Segoe UI', system-ui, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2);
@@ -177,7 +214,15 @@ export function muteButtonRect(w: number): Rect {
 }
 
 // ---- Title screen --------------------------------------------------------
-export function drawTitle(ctx: CanvasRenderingContext2D, w: number, h: number, time: number, best: RunStats | null, muted: boolean): void {
+export function drawTitle(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  time: number,
+  best: RunStats | null,
+  muted: boolean,
+  coop: CoopAvailability = "unavailable",
+): void {
   dim(ctx, w, h, 0.55);
   neonTitle(ctx, "NOVA SWARM", w / 2, h * 0.28, Math.min(72, w * 0.11), time, w * 0.92);
 
@@ -201,7 +246,7 @@ export function drawTitle(ctx: CanvasRenderingContext2D, w: number, h: number, t
   const panelX = panel.x;
   const panelTop = panel.y;
   const panelH = panel.h;
-  const panelScale = Math.min(1, Math.max(0.6, h / 760));
+  const panelScale = titleScale(h);
 
   ctx.save();
   ctx.translate(w / 2, panelTop);
@@ -263,8 +308,30 @@ export function drawTitle(ctx: CanvasRenderingContext2D, w: number, h: number, t
     ctx.fillText(bestText, w / 2, panelTop + panelH + 28);
   }
 
-  drawButton(ctx, titlePlayButtonRect(w, h), "▶  PLAY", time);
+  drawButton(ctx, titlePlayButtonRect(w, h), "▶  PLAY SOLO", time);
   ctx.restore(); // closes the panelScale transform
+
+  // Co-op row (already in screen space).
+  const rects = titleButtonRects(w, h);
+  const fontPx = Math.round(15 * panelScale);
+  if (coop === "ready") {
+    drawButton(ctx, rects.host, "HOST CO-OP", time, "#5dffb0", fontPx);
+    drawButton(ctx, rects.join, "JOIN", time, "#5b7bff", fontPx);
+  } else {
+    const row: Rect = { x: rects.host.x, y: rects.host.y, w: rects.join.x + rects.join.w - rects.host.x, h: rects.host.h };
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    ctx.strokeStyle = "rgba(230,244,255,0.5)";
+    ctx.lineWidth = 1.5;
+    roundRect(ctx, row.x, row.y, row.w, row.h, 14);
+    ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = "rgba(230,244,255,0.6)";
+    ctx.font = `700 ${fontPx}px 'Segoe UI', system-ui, sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(coop === "waking" ? "Waking co-op server…" : "Co-op unavailable", row.x + row.w / 2, row.y + row.h / 2);
+  }
 
   // Mute toggle
   const mb = muteButtonRect(w);
@@ -298,10 +365,10 @@ export function drawLevelUp(
   ctx: CanvasRenderingContext2D,
   w: number,
   h: number,
-  world: World,
-  choices: Upgrade[],
+  choices: UpgradeCard[],
   pointer: { x: number; y: number },
   time: number,
+  waitingNames: string[] = [],
 ): void {
   dim(ctx, w, h, 0.72);
   ctx.textAlign = "center";
@@ -343,7 +410,7 @@ export function drawLevelUp(
     ctx.fillText(u.name, r.x + r.w / 2, r.y + 118);
 
     // Level label
-    const label = world.choiceLabel(u);
+    const label = u.label;
     if (label) {
       ctx.fillStyle = u.color;
       ctx.font = "700 13px 'Segoe UI', system-ui, sans-serif";
@@ -353,12 +420,19 @@ export function drawLevelUp(
     // Description (wrapped)
     ctx.fillStyle = "rgba(230,244,255,0.75)";
     ctx.font = "500 14px 'Segoe UI', system-ui, sans-serif";
-    wrapText(ctx, u.desc(world.player), r.x + r.w / 2, r.y + 176, r.w - 32, 20);
+    wrapText(ctx, u.desc, r.x + r.w / 2, r.y + 176, r.w - 32, 20);
 
     // Number key hint
     ctx.fillStyle = u.color;
     ctx.font = "800 16px 'Segoe UI', system-ui, sans-serif";
     ctx.fillText(`${i + 1}`, r.x + r.w / 2, r.y + r.h - 26);
+  }
+
+  if (waitingNames.length > 0) {
+    ctx.fillStyle = "rgba(230,244,255,0.6)";
+    ctx.font = "700 14px 'Segoe UI', system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText(`waiting on ${waitingNames.join(", ")}…`, w / 2, h - 24);
   }
 }
 

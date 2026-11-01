@@ -1,0 +1,24 @@
+{
+  "name": "novaswarm-relay",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "NOVA SWARM co-op relay: rooms + message forwarding over WebSockets. No game logic.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "tsx src/main.ts",
+    "dev": "tsx watch src/main.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "tsx": "^4.19.2",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.6.3"
+  }
+}
