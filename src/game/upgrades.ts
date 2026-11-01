@@ -224,6 +224,20 @@ export function rollUpgrades(
 }
 
 /** Display level label for a card, e.g. "Lv 3 → 4" or "NEW". */
+/** Everything a level-up card shows, as plain strings (so the host can send it to a client). */
+export interface UpgradeCard {
+  id: string;
+  name: string;
+  icon: string;
+  color: string;
+  label: string;
+  desc: string;
+}
+
+export function toCard(u: Upgrade, p: Player): UpgradeCard {
+  return { id: u.id, name: u.name, icon: u.icon, color: u.color, label: upgradeLabel(u, p, p.taken), desc: u.desc(p) };
+}
+
 export function upgradeLabel(u: Upgrade, p: Player, taken: Record<string, number>): string {
   const lvl = upgradeLevel(u, p, taken);
   if (u.id.endsWith("_unlock")) return "NEW";

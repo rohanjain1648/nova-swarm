@@ -21,10 +21,10 @@ const defFor = (kind: EnemyKind): EnemyDef =>
   kind === "boss" ? BOSS : ENEMIES[kind as Exclude<EnemyKind, "boss">];
 
 /** Populate a (possibly recycled) enemy struct in place. */
-export function initEnemy(e: Enemy, kind: EnemyKind, x: number, y: number, t: number): void {
+export function initEnemy(e: Enemy, kind: EnemyKind, x: number, y: number, t: number, hpMul = 1): void {
   const def = defFor(kind);
   const boss = kind === "boss";
-  const hs = hpScale(t) * (boss ? 1 + t / 240 : 1);
+  const hs = hpScale(t) * (boss ? 1 + t / 240 : 1) * hpMul;
   const ss = speedScale(t);
   e.kind = kind;
   e.x = x;
@@ -98,6 +98,7 @@ export class Director {
     enemyCount: number,
     rng: RNG,
     spawn: (kind: EnemyKind, x: number, y: number) => void,
+    spawnRateMul = 1,
   ): void {
     // Boss cadence
     this.bossTimer -= dt;
@@ -113,7 +114,13 @@ export class Director {
     if (this.spawnTimer <= 0) {
       this.spawnTimer += spawnInterval(t);
       if (enemyCount < DIRECTOR.maxEnemies) {
-        const n = batchSize(t);
+        let n = batchSize(t);
+        // Co-op: scale the batch, rounding the fraction probabilistically. A
+        // multiplier of exactly 1 (solo) draws no extra randomness.
+        if (spawnRateMul !== 1) {
+          const scaled = n * spawnRateMul;
+          n = Math.floor(scaled) + (rng.next() < scaled - Math.floor(scaled) ? 1 : 0);
+        }
         for (let i = 0; i < n; i++) {
           const kind = chooseKind(t, rng);
           const [x, y] = ringPoint(px, py, viewRadius + 60 + rng.next() * 120, rng);

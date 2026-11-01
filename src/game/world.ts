@@ -1,14 +1,14 @@
 import { SpatialGrid } from "../core/grid";
-import { angleTo, clamp, dist, len, RNG, TAU } from "../core/math";
+import { angleTo, clamp, dist, dist2, len, RNG, TAU } from "../core/math";
 import type { Audio } from "../core/audio";
-import { PALETTE, WORLD, xpForLevel } from "./config";
+import { COOP, PALETTE, PLAYER, WORLD, xpForLevel } from "./config";
 import type { EnemyKind } from "./config";
 import { applyEffect, type Effect } from "./effects";
 import { Director, initEnemy, ringPoint, shooterConfig } from "./enemies";
 import { Particles } from "./particles";
 import { Player } from "./player";
 import { rollUpgrades, upgradeLabel, type Upgrade } from "./upgrades";
-import type { Bullet, Enemy, EnemyBullet, Gem, PlayerInput } from "./types";
+import { IDLE_INPUT, type Bullet, type Enemy, type EnemyBullet, type Gem, type PlayerInput } from "./types";
 
 export interface NovaRing {
   x: number;
@@ -25,6 +25,18 @@ export interface RunStats {
   level: number;
 }
 
+export interface Ping {
+  slot: number;
+  x: number;
+  y: number;
+  life: number;
+}
+
+export interface SlotInfo {
+  slot: number;
+  name: string;
+}
+
 /**
  * Pure simulation — no rendering, no camera. Owns every entity in pooled
  * arrays and advances the world by one deterministic fixed step in `update`.
@@ -34,6 +46,9 @@ export interface RunStats {
  * `traumaPulse` replaces the old camera's built-in shake: World just reports
  * "how much impact happened this step," and whatever camera is in use decides
  * how to turn that into a shake.
+ *
+ * Players live in `players`, indexed by co-op slot. Solo is simply a single
+ * slot-0 player, and every co-op multiplier collapses to 1 for it.
  */
 export class World {
   readonly particles = new Particles();
@@ -41,12 +56,13 @@ export class World {
   private readonly rng = new RNG();
   private readonly director = new Director();
 
-  player = new Player();
+  players: Player[] = [World.makePlayer({ slot: 0, name: "YOU" })];
   enemies: Enemy[] = [];
   bullets: Bullet[] = [];
   enemyBullets: EnemyBullet[] = [];
   gems: Gem[] = [];
   readonly novaRings: NovaRing[] = [];
+  readonly pings: Ping[] = [];
 
   time = 0;
   kills = 0;
@@ -55,7 +71,6 @@ export class World {
   xpToNext = xpForLevel(1);
   pendingLevelUps = 0;
   gameOver = false;
-  private taken: Record<string, number> = {};
   private boss: Enemy | null = null;
   flashT = 0; // full-screen flash intensity (level up / boss / death), read by the HUD overlay
   flashColor = "255,255,255";
@@ -71,6 +86,29 @@ export class World {
   private trauma = 0;
 
   constructor(private readonly audio: Audio) {}
+
+  private static makePlayer(info: SlotInfo, active = true): Player {
+    const p = new Player();
+    p.slot = info.slot;
+    p.name = info.name;
+    p.active = active;
+    return p;
+  }
+
+  /** The player whose screen this is (camera, HUD, level-up cards). */
+  get player(): Player {
+    return this.players[this.localSlot] ?? this.players[0];
+  }
+
+  get activeCount(): number {
+    let n = 0;
+    for (const p of this.players) if (p.active) n++;
+    return n;
+  }
+
+  private isLiving(p: Player): boolean {
+    return p.active && !p.downed;
+  }
 
   setViewRadius(r: number): void {
     this.viewRadius = r;
@@ -104,13 +142,32 @@ export class World {
     if (this.recordEffects) this.effectBuf.push(ev);
   }
 
-  reset(): void {
-    this.player.reset();
+  /**
+   * Start a fresh run. `slots` lists the players taking part (solo: just slot
+   * 0); gaps in slot numbers become inactive placeholders so `players[slot]`
+   * always indexes by slot.
+   */
+  reset(slots: SlotInfo[] = [{ slot: 0, name: "YOU" }]): void {
+    const size = Math.max(...slots.map((s) => s.slot)) + 1;
+    this.players = [];
+    for (let i = 0; i < size; i++) {
+      const info = slots.find((s) => s.slot === i);
+      this.players.push(World.makePlayer(info ?? { slot: i, name: "" }, !!info));
+    }
+    // Co-op squads start in a small circle around the origin; solo stays at (0,0).
+    if (slots.length > 1) {
+      slots.forEach((s, k) => {
+        const a = (k / slots.length) * TAU;
+        this.players[s.slot].x = Math.cos(a) * 50;
+        this.players[s.slot].y = Math.sin(a) * 50;
+      });
+    }
     for (const e of this.enemies) e.dead = true;
     for (const b of this.bullets) b.dead = true;
     for (const b of this.enemyBullets) b.dead = true;
     for (const g of this.gems) g.dead = true;
     this.novaRings.length = 0;
+    this.pings.length = 0;
     this.particles.reset();
     this.director.reset();
     this.time = 0;
@@ -120,10 +177,10 @@ export class World {
     this.xpToNext = xpForLevel(1);
     this.pendingLevelUps = 0;
     this.gameOver = false;
-    this.taken = {};
     this.boss = null;
     this.flashT = 0;
     this.trauma = 0;
+    this.effectBuf = [];
   }
 
   // ---- Pool helpers -------------------------------------------------------
@@ -144,7 +201,7 @@ export class World {
     for (let i = 0; i < this.bullets.length; i++) if (this.bullets[i].dead) return this.bullets[i];
     const b: Bullet = {
       x: 0, y: 0, vx: 0, vy: 0, radius: 5, damage: 0, pierce: 0,
-      life: 0, dead: true, crit: false, hitCd: 0,
+      life: 0, dead: true, crit: false, hitCd: 0, owner: 0,
     };
     this.bullets.push(b);
     return b;
@@ -164,9 +221,14 @@ export class World {
     return g;
   }
 
+  /** Enemy HP multiplier for the current squad size (1 in solo). */
+  private get hpMul(): number {
+    return 1 + COOP.hpPerExtra * (this.activeCount - 1);
+  }
+
   private spawnEnemyAt = (kind: EnemyKind, x: number, y: number): void => {
     const e = this.acquireEnemy();
-    initEnemy(e, kind, x, y, this.time);
+    initEnemy(e, kind, x, y, this.time, this.hpMul);
     if (kind === "boss") {
       this.boss = e;
       this.emit({ k: "sfx", n: "bossWarn", slot: -1 });
@@ -186,28 +248,37 @@ export class World {
     this.flashT = Math.max(this.flashT, intensity);
   }
 
+  /** Nearest living player to (x, y), or null when everyone is down. */
+  private nearestLiving(x: number, y: number): Player | null {
+    let best: Player | null = null;
+    let bestD = Infinity;
+    for (const p of this.players) {
+      if (!this.isLiving(p)) continue;
+      const d = dist2(x, y, p.x, p.y);
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    return best;
+  }
+
   // ---- Simulation ---------------------------------------------------------
   update(dt: number, inputs: readonly PlayerInput[]): void {
     if (this.gameOver) return;
     this.time += dt;
-    const input = inputs[0];
 
-    this.movePlayer(dt, input);
+    for (const p of this.players) {
+      if (this.isLiving(p) && !p.remote) this.stepPlayerMovement(p, inputs[p.slot] ?? IDLE_INPUT, dt);
+    }
     this.updateEnemies(dt);
     this.grid.rebuild(this.enemies);
 
-    // Twin-input control: keys move the robot; the held cursor only turns it
-    // and fires — it never moves it. Aim wins over movement for facing, and
-    // with no input at all the robot holds heading and stays silent. Touch
-    // drag (mobile, single input) both moves and fires.
-    const steering = input.moveX !== 0 || input.moveY !== 0;
-    if (input.aimActive) {
-      this.player.facing = Math.atan2(input.aimY, input.aimX);
-    } else if (steering) {
-      this.player.facing = Math.atan2(input.moveY, input.moveX);
+    for (const p of this.players) {
+      if (!this.isLiving(p)) continue;
+      const firing = p.remote ? p.remoteFiring : (inputs[p.slot] ?? IDLE_INPUT).firing;
+      this.fireWeapons(p, dt, firing);
     }
-
-    this.fireWeapons(dt, input.firing);
     this.updateBullets(dt);
     this.updateEnemyBullets(dt);
     this.contactDamage();
@@ -215,26 +286,48 @@ export class World {
     this.updateNovaRings(dt);
 
     // Player timers
-    const p = this.player;
-    if (p.invuln > 0) p.invuln -= dt;
-    if (p.hurtFlash > 0) p.hurtFlash = Math.max(0, p.hurtFlash - dt * 3);
-    if (p.regen > 0 && p.hp < p.maxHp) {
-      p.regenFrac += p.regen * dt;
-      if (p.regenFrac >= 1) {
-        const add = Math.floor(p.regenFrac);
-        p.hp = Math.min(p.maxHp, p.hp + add);
-        p.regenFrac -= add;
+    for (const p of this.players) {
+      if (!p.active) continue;
+      if (p.invuln > 0) p.invuln -= dt;
+      if (p.hurtFlash > 0) p.hurtFlash = Math.max(0, p.hurtFlash - dt * 3);
+      if (p.pingCd > 0) p.pingCd -= dt;
+      if (!p.downed && p.regen > 0 && p.hp < p.maxHp) {
+        p.regenFrac += p.regen * dt;
+        if (p.regenFrac >= 1) {
+          const add = Math.floor(p.regenFrac);
+          p.hp = Math.min(p.maxHp, p.hp + add);
+          p.regenFrac -= add;
+        }
       }
     }
+    this.updateRevives(dt);
+    this.updatePings(dt);
 
-    this.director.update(dt, this.time, p.x, p.y, this.viewRadius, this.aliveEnemyCount(), this.rng, this.spawnEnemyAt);
+    const centre = this.spawnCentre();
+    this.director.update(
+      dt, this.time, centre.x, centre.y, this.viewRadius, this.aliveEnemyCount(), this.rng, this.spawnEnemyAt,
+      1 + COOP.spawnPerExtra * (this.activeCount - 1),
+    );
     this.tickCosmetics(dt);
 
-    if (p.hp <= 0) this.die();
+    for (const p of this.players) if (this.isLiving(p) && p.hp <= 0) this.down(p);
+    if (!this.players.some((p) => this.isLiving(p))) this.gameOver = true;
   }
 
-  private movePlayer(dt: number, input: PlayerInput): void {
-    const p = this.player;
+  /** A living player to ring spawns around (random in co-op so nobody escapes pressure). */
+  private spawnCentre(): Player {
+    const living = this.players.filter((p) => this.isLiving(p));
+    if (living.length === 0) return this.player;
+    if (living.length === 1) return living[0];
+    return living[Math.floor(this.rng.next() * living.length)];
+  }
+
+  /**
+   * Move one player from their controls and turn them to face aim/movement.
+   * Public so a co-op client can predict its own robot with the exact same
+   * code the host runs.
+   */
+  stepPlayerMovement(p: Player, input: PlayerInput, dt: number): void {
     const targetVx = input.moveX * p.speed;
     const targetVy = input.moveY * p.speed;
     // Snappy but not instant — small accel for weightiness.
@@ -242,16 +335,103 @@ export class World {
     p.vy += (targetVy - p.vy) * Math.min(1, dt * 16);
     p.x = clamp(p.x + p.vx * dt, -WORLD.half, WORLD.half);
     p.y = clamp(p.y + p.vy * dt, -WORLD.half, WORLD.half);
+
+    // Twin-input control: keys move the robot; the held cursor only turns it
+    // and fires — it never moves it. Aim wins over movement for facing, and
+    // with no input at all the robot holds heading and stays silent. Touch
+    // drag (mobile, single input) both moves and fires.
+    if (input.aimActive) {
+      p.facing = Math.atan2(input.aimY, input.aimX);
+    } else if (input.moveX !== 0 || input.moveY !== 0) {
+      p.facing = Math.atan2(input.moveY, input.moveX);
+    }
+  }
+
+  /**
+   * Host: accept a remote client's self-reported pose. The jump is clamped so
+   * a stale or bogus packet can't teleport the robot across the arena.
+   */
+  setRemotePose(slot: number, x: number, y: number, facing: number, firing: boolean): void {
+    const p = this.players[slot];
+    if (!p || !p.active) return;
+    let dx = x - p.x;
+    let dy = y - p.y;
+    const d = len(dx, dy);
+    const maxStep = p.speed * COOP.poseMaxLagSec;
+    if (d > maxStep) {
+      dx = (dx / d) * maxStep;
+      dy = (dy / d) * maxStep;
+    }
+    const elapsed = Math.max(this.time - p.lastPoseT, 1 / 60);
+    p.lastPoseT = this.time;
+    if (!p.downed) {
+      p.x = clamp(p.x + dx, -WORLD.half, WORLD.half);
+      p.y = clamp(p.y + dy, -WORLD.half, WORLD.half);
+      p.vx = dx / elapsed;
+      p.vy = dy / elapsed;
+      p.facing = facing;
+    }
+    p.remoteFiring = firing;
+  }
+
+  /** A player left the run for good: their robot and shots vanish. */
+  removePlayer(slot: number): void {
+    const p = this.players[slot];
+    if (!p) return;
+    p.active = false;
+    for (const b of this.bullets) if (b.owner === slot) b.dead = true;
+  }
+
+  /** Drop a ping marker at the player's robot; false while on cooldown or downed. */
+  addPing(slot: number): boolean {
+    const p = this.players[slot];
+    if (!p || !this.isLiving(p) || p.pingCd > 0) return false;
+    p.pingCd = COOP.pingCooldownSec;
+    this.pings.push({ slot, x: p.x, y: p.y, life: COOP.pingLifeSec });
+    return true;
+  }
+
+  private updatePings(dt: number): void {
+    for (let i = this.pings.length - 1; i >= 0; i--) {
+      this.pings[i].life -= dt;
+      if (this.pings[i].life <= 0) this.pings.splice(i, 1);
+    }
+  }
+
+  private updateRevives(dt: number): void {
+    for (const p of this.players) {
+      if (!p.active || !p.downed) continue;
+      let helped = false;
+      for (const q of this.players) {
+        if (q !== p && this.isLiving(q) && dist(p.x, p.y, q.x, q.y) <= COOP.reviveRange) {
+          helped = true;
+          break;
+        }
+      }
+      if (!helped) {
+        p.reviveT = 0;
+        continue;
+      }
+      p.reviveT += dt / COOP.reviveSeconds;
+      if (p.reviveT >= 1) {
+        p.downed = false;
+        p.reviveT = 0;
+        p.hp = Math.round(p.maxHp * COOP.reviveHpFrac);
+        p.invuln = PLAYER.iFrames;
+        this.emit({ k: "text", x: p.x, y: p.y - 20, text: "REVIVED", color: PALETTE.heal, size: 20 });
+        this.emit({ k: "sfx", n: "levelup", slot: -1 });
+      }
+    }
   }
 
   private updateEnemies(dt: number): void {
-    const p = this.player;
     for (let i = 0; i < this.enemies.length; i++) {
       const e = this.enemies[i];
       if (e.dead) continue;
       e.spawnT += dt;
       if (e.flash > 0) e.flash = Math.max(0, e.flash - dt * 5);
 
+      const p = this.nearestLiving(e.x, e.y) ?? this.player;
       const a = angleTo(e.x, e.y, p.x, p.y);
       const spawnBoost = e.spawnT < 0.4 ? 0 : 1; // brief pause as they fade in
       e.vx = Math.cos(a) * e.speed * spawnBoost;
@@ -264,7 +444,7 @@ export class World {
       e.x = clamp(e.x + (e.vx + e.kbx) * dt, -WORLD.half, WORLD.half);
       e.y = clamp(e.y + (e.vy + e.kby) * dt, -WORLD.half, WORLD.half);
 
-      // Ranged enemies + boss fire at the player.
+      // Ranged enemies + boss fire at the player they're chasing.
       const sc = shooterConfig(e.kind);
       if (sc) {
         e.shootCd -= dt;
@@ -295,9 +475,7 @@ export class World {
   }
 
   // ---- Weapons ------------------------------------------------------------
-  private fireWeapons(dt: number, firing: boolean): void {
-    const p = this.player;
-
+  private fireWeapons(p: Player, dt: number, firing: boolean): void {
     // Blaster: volley along the direction the player is steering. Fires only
     // while there is manual input, so an idle robot never shoots on its own.
     p.blasterCd -= dt;
@@ -308,9 +486,9 @@ export class World {
       const base = p.facing;
       for (let i = 0; i < n; i++) {
         const t = n > 1 ? i / (n - 1) - 0.5 : 0;
-        this.fireBullet(base + t * spread * (n - 1) * 0.5 + t * spread);
+        this.fireBullet(p, base + t * spread * (n - 1) * 0.5 + t * spread);
       }
-      this.emit({ k: "sfx", n: "shoot", slot: 0 });
+      this.emit({ k: "sfx", n: "shoot", slot: p.slot });
     }
 
     // Orbitals: continuous contact damage around rotating points.
@@ -323,7 +501,7 @@ export class World {
         const oy = p.y + Math.sin(a) * p.orbitalRadius;
         this.grid.query(ox, oy, 18 + 30, (e) => {
           if (dist(ox, oy, e.x, e.y) <= 18 + e.radius) {
-            this.damageEnemy(e, p.orbitalDamage * dt, false, ox, oy, 0);
+            this.damageEnemy(e, p.orbitalDamage * dt, false, ox, oy, 0, p);
           }
         });
       }
@@ -340,19 +518,18 @@ export class World {
           const d = dist(p.x, p.y, e.x, e.y);
           if (d <= r + e.radius) {
             const a = angleTo(p.x, p.y, e.x, e.y);
-            this.damageEnemy(e, p.novaDamage, false, e.x, e.y, 260);
+            this.damageEnemy(e, p.novaDamage, false, e.x, e.y, 260, p);
             e.kbx += Math.cos(a) * 260;
             e.kby += Math.sin(a) * 260;
           }
         });
         this.emit({ k: "sfx", n: "hit", slot: -1 });
-        this.emit({ k: "trauma", v: 0.18, slot: 0 });
+        this.emit({ k: "trauma", v: 0.18, slot: p.slot });
       }
     }
   }
 
-  private fireBullet(angle: number): void {
-    const p = this.player;
+  private fireBullet(p: Player, angle: number): void {
     const b = this.acquireBullet();
     const speed = 640 * p.projSpeedMul;
     b.x = p.x + Math.cos(angle) * 18;
@@ -365,6 +542,7 @@ export class World {
     b.pierce = p.pierceBonus;
     b.life = 1.4;
     b.hitCd = 0;
+    b.owner = p.slot;
     b.dead = false;
   }
 
@@ -379,11 +557,12 @@ export class World {
       if (Math.abs(b.x) > WORLD.half + 40 || Math.abs(b.y) > WORLD.half + 40) { b.dead = true; continue; }
       if (b.hitCd > 0) { b.hitCd -= dt; continue; }
 
+      const owner = this.players[b.owner] ?? this.player;
       // Broad-phase query; boss radius (64) is the largest, pad accordingly.
       this.grid.query(b.x, b.y, b.radius + 70, (e) => {
         if (b.dead || b.hitCd > 0) return;
         if (dist(b.x, b.y, e.x, e.y) <= b.radius + e.radius) {
-          this.damageEnemy(e, b.damage, b.crit, b.x, b.y, 90);
+          this.damageEnemy(e, b.damage, b.crit, b.x, b.y, 90, owner);
           b.hitCd = 0.04;
           if (b.pierce <= 0) b.dead = true;
           else b.pierce--;
@@ -393,7 +572,6 @@ export class World {
   }
 
   private updateEnemyBullets(dt: number): void {
-    const p = this.player;
     for (let i = 0; i < this.enemyBullets.length; i++) {
       const b = this.enemyBullets[i];
       if (b.dead) continue;
@@ -401,31 +579,38 @@ export class World {
       if (b.life <= 0) { b.dead = true; continue; }
       b.x += b.vx * dt;
       b.y += b.vy * dt;
-      if (dist(b.x, b.y, p.x, p.y) <= b.radius + p.radius) {
-        b.dead = true;
-        if (p.takeDamage(b.damage)) this.onPlayerHurt();
+      for (const p of this.players) {
+        if (!this.isLiving(p)) continue;
+        if (dist(b.x, b.y, p.x, p.y) <= b.radius + p.radius) {
+          b.dead = true;
+          if (p.takeDamage(b.damage)) this.onPlayerHurt(p);
+          break;
+        }
       }
     }
   }
 
-  private damageEnemy(e: Enemy, dmg: number, crit: boolean, hx: number, hy: number, knockback: number): void {
+  private damageEnemy(
+    e: Enemy, dmg: number, crit: boolean, hx: number, hy: number, knockback: number, owner: Player,
+  ): void {
     if (e.dead) return;
     e.hp -= dmg;
     e.flash = 1;
     if (knockback > 0) {
-      const a = angleTo(this.player.x, this.player.y, e.x, e.y);
+      const a = angleTo(owner.x, owner.y, e.x, e.y);
       e.kbx += Math.cos(a) * knockback;
       e.kby += Math.sin(a) * knockback;
     }
     this.emit({ k: "spark", x: hx, y: hy, color: e.color, count: crit ? 6 : 2, speed: 200, size: crit ? 3.5 : 2.2 });
     if (crit) this.emit({ k: "text", x: hx, y: hy - 6, text: `${Math.round(dmg)}`, color: "#fff2a8", size: 20 });
-    if (e.hp <= 0) this.killEnemy(e);
+    if (e.hp <= 0) this.killEnemy(e, owner);
     else this.emit({ k: "sfx", n: "hit", slot: -1 });
   }
 
-  private killEnemy(e: Enemy): void {
+  private killEnemy(e: Enemy, killer: Player): void {
     e.dead = true;
     this.kills++;
+    killer.kills++;
     this.emit({
       k: "spark", x: e.x, y: e.y, color: e.color,
       count: e.isBoss ? 60 : 12, speed: e.isBoss ? 460 : 260, size: e.isBoss ? 5 : 3,
@@ -452,7 +637,9 @@ export class World {
       if (e.splitInto) {
         for (let i = 0; i < 2; i++) {
           const child = this.acquireEnemy();
-          initEnemy(child, e.splitInto, e.x + (Math.random() - 0.5) * 24, e.y + (Math.random() - 0.5) * 24, this.time);
+          initEnemy(
+            child, e.splitInto, e.x + (Math.random() - 0.5) * 24, e.y + (Math.random() - 0.5) * 24, this.time, this.hpMul,
+          );
         }
       }
     }
@@ -474,32 +661,35 @@ export class World {
   }
 
   private contactDamage(): void {
-    const p = this.player;
-    this.grid.query(p.x, p.y, p.radius + 70, (e) => {
-      if (dist(p.x, p.y, e.x, e.y) <= p.radius + e.radius) {
-        if (p.takeDamage(e.touchDamage)) {
-          this.onPlayerHurt();
-          // Small knockback to the enemy so you're not instantly re-hit.
-          const a = angleTo(e.x, e.y, p.x, p.y);
-          e.kbx -= Math.cos(a) * 160;
-          e.kby -= Math.sin(a) * 160;
+    for (const p of this.players) {
+      if (!this.isLiving(p)) continue;
+      this.grid.query(p.x, p.y, p.radius + 70, (e) => {
+        if (dist(p.x, p.y, e.x, e.y) <= p.radius + e.radius) {
+          if (p.takeDamage(e.touchDamage)) {
+            this.onPlayerHurt(p);
+            // Small knockback to the enemy so you're not instantly re-hit.
+            const a = angleTo(e.x, e.y, p.x, p.y);
+            e.kbx -= Math.cos(a) * 160;
+            e.kby -= Math.sin(a) * 160;
+          }
         }
-      }
-    });
+      });
+    }
   }
 
-  private onPlayerHurt(): void {
-    this.emit({ k: "sfx", n: "hurt", slot: 0 });
-    this.emit({ k: "trauma", v: 0.5, slot: 0 });
-    this.emit({ k: "flash", color: "255,60,90", i: 0.45, slot: 0 });
-    this.emit({ k: "spark", x: this.player.x, y: this.player.y, color: PALETTE.danger, count: 14, speed: 240, size: 3 });
+  private onPlayerHurt(p: Player): void {
+    this.emit({ k: "sfx", n: "hurt", slot: p.slot });
+    this.emit({ k: "trauma", v: 0.5, slot: p.slot });
+    this.emit({ k: "flash", color: "255,60,90", i: 0.45, slot: p.slot });
+    this.emit({ k: "spark", x: p.x, y: p.y, color: PALETTE.danger, count: 14, speed: 240, size: 3 });
   }
 
   private updateGems(dt: number): void {
-    const p = this.player;
     for (let i = 0; i < this.gems.length; i++) {
       const g = this.gems[i];
       if (g.dead) continue;
+      const p = this.nearestLiving(g.x, g.y);
+      if (!p) continue;
       const d = dist(g.x, g.y, p.x, p.y);
       const a = angleTo(g.x, g.y, p.x, p.y);
       // Enemies die at blaster range, far from the player, so a gentle global
@@ -525,22 +715,31 @@ export class World {
         if (g.kind === "heal") {
           p.hp = Math.min(p.maxHp, p.hp + Math.max(15, p.maxHp * 0.15));
           this.emit({ k: "text", x: p.x, y: p.y - 20, text: "+HP", color: PALETTE.heal, size: 18 });
-          this.emit({ k: "sfx", n: "pickup", slot: 0 });
+          this.emit({ k: "sfx", n: "pickup", slot: p.slot });
         } else {
-          this.addXp(g.value);
-          this.emit({ k: "sfx", n: "pickup", slot: 0 });
+          this.addXp(g.value * p.xpMul);
+          this.emit({ k: "sfx", n: "pickup", slot: p.slot });
         }
       }
     }
   }
 
   private addXp(value: number): void {
-    this.xp += value * this.player.xpMul;
+    this.xp += value;
     while (this.xp >= this.xpToNext) {
       this.xp -= this.xpToNext;
       this.level++;
       this.xpToNext = xpForLevel(this.level);
       this.pendingLevelUps++;
+    }
+  }
+
+  private updateNovaRings(dt: number): void {
+    for (let i = this.novaRings.length - 1; i >= 0; i--) {
+      const n = this.novaRings[i];
+      n.life -= dt;
+      n.r += (n.maxR - n.r) * Math.min(1, dt * 10);
+      if (n.life <= 0) this.novaRings.splice(i, 1);
     }
   }
 
@@ -556,37 +755,38 @@ export class World {
     this.audio.setIntensity(clamp(this.time / 240 + this.aliveEnemyCount() / 400, 0, 1));
   }
 
-  private updateNovaRings(dt: number): void {
-    for (let i = this.novaRings.length - 1; i >= 0; i--) {
-      const n = this.novaRings[i];
-      n.life -= dt;
-      n.r += (n.maxR - n.r) * Math.min(1, dt * 10);
-      if (n.life <= 0) this.novaRings.splice(i, 1);
-    }
-  }
-
-  private die(): void {
-    if (this.gameOver) return;
-    this.gameOver = true;
-    this.player.hp = 0;
-    this.emit({ k: "sfx", n: "bigKill", slot: 0 });
-    this.emit({ k: "trauma", v: 1, slot: 0 });
-    this.emit({ k: "flash", color: "255,60,90", i: 1, slot: 0 });
-    this.emit({ k: "spark", x: this.player.x, y: this.player.y, color: PALETTE.player, count: 80, speed: 420, size: 5 });
+  /** A player hit 0 HP: in solo this is death; in co-op they wait for a revive. */
+  private down(p: Player): void {
+    p.downed = true;
+    p.hp = 0;
+    p.reviveT = 0;
+    p.vx = p.vy = 0;
+    this.emit({ k: "sfx", n: "bigKill", slot: p.slot });
+    this.emit({ k: "trauma", v: 1, slot: p.slot });
+    this.emit({ k: "flash", color: "255,60,90", i: 1, slot: p.slot });
+    this.emit({ k: "spark", x: p.x, y: p.y, color: COOP.slotColors[p.slot] ?? PALETTE.player, count: 80, speed: 420, size: 5 });
   }
 
   // ---- Level-up interface (driven by the UI layer) ------------------------
-  rollUpgradeChoices(): Upgrade[] {
-    return rollUpgrades(this.player, this.taken, this.rng, 3);
+  rollUpgradeChoices(slot = this.localSlot): Upgrade[] {
+    const p = this.players[slot];
+    return rollUpgrades(p, p.taken, this.rng, 3);
   }
 
-  choiceLabel(u: Upgrade): string {
-    return upgradeLabel(u, this.player, this.taken);
+  choiceLabel(u: Upgrade, slot = this.localSlot): string {
+    const p = this.players[slot];
+    return upgradeLabel(u, p, p.taken);
   }
 
-  applyUpgrade(u: Upgrade): void {
-    u.apply(this.player);
-    this.taken[u.id] = (this.taken[u.id] ?? 0) + 1;
+  /** Apply one player's pick. Does not close the level-up — see `finishLevelUp`. */
+  applyUpgrade(slot: number, u: Upgrade): void {
+    const p = this.players[slot];
+    u.apply(p);
+    p.taken[u.id] = (p.taken[u.id] ?? 0) + 1;
+  }
+
+  /** Everyone has picked for one team level: consume it. */
+  finishLevelUp(): void {
     this.pendingLevelUps = Math.max(0, this.pendingLevelUps - 1);
     this.emit({ k: "sfx", n: "levelup", slot: -1 });
     this.emit({ k: "flash", color: "120,200,255", i: 0.4, slot: -1 });

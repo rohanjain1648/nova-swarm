@@ -13,6 +13,26 @@ export class Player {
   vy = 0;
   facing = 0; // radians, heading (cursor aim, else movement) — drives the 3D model's body rotation
 
+  // --- Co-op identity (kept across reset) ---
+  slot = 0;
+  name = "YOU";
+  /** False once the player has left the run; they're skipped by every system. */
+  active = true;
+  /** Host side: this robot's pose comes from the network, not local input. */
+  remote = false;
+
+  // --- Co-op run state (cleared by reset) ---
+  /** At 0 HP in co-op a player is downed (not dead) until a teammate revives them. */
+  downed = false;
+  /** Revive progress, 0..1. */
+  reviveT = 0;
+  remoteFiring = false;
+  lastPoseT = 0;
+  kills = 0;
+  /** Upgrade id -> times taken; each player owns their build. */
+  taken: Record<string, number> = {};
+  pingCd = 0;
+
   hp: number;
   invuln = 0; // i-frame timer
   hurtFlash = 0;
@@ -74,6 +94,13 @@ export class Player {
     this.hurtFlash = 0;
     this.regenFrac = 0;
     this.hp = this.maxHp;
+    this.downed = false;
+    this.reviveT = 0;
+    this.remoteFiring = false;
+    this.lastPoseT = 0;
+    this.kills = 0;
+    this.taken = {};
+    this.pingCd = 0;
   }
 
   get radius(): number {

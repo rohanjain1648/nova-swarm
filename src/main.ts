@@ -180,7 +180,8 @@ function handleLevelUp(): void {
   input.consumeConfirm(); // don't let a stray confirm leak into gameplay
 
   if (pick >= 0) {
-    world.applyUpgrade(choices[pick]);
+    world.applyUpgrade(0, choices[pick]);
+    world.finishLevelUp();
     if (world.pendingLevelUps > 0) choices = world.rollUpgradeChoices();
     else state = "playing";
   }

@@ -48,6 +48,8 @@ export interface Bullet {
   crit: boolean;
   /** Set of enemies already hit (prevents multi-hitting a pierced target). */
   hitCd: number;
+  /** Slot of the player who fired it (kill credit, knockback direction). */
+  owner: number;
 }
 
 export interface EnemyBullet {
