@@ -35,6 +35,17 @@ Rendered in real-time 3D: a fully rigged, skeletal-animated robot cast (walking/
 
 Everything is playable one-handed on desktop and with a single thumb on mobile (drag anywhere to steer). Any aspect ratio; the view scales to your screen.
 
+### Co-op (2–4 players)
+
+Play one run together with friends — no accounts, just a room code.
+
+- **Host:** tap **HOST CO-OP** on the title screen. You get a 4-letter room code and a **Copy invite link** button. Start the run once at least one friend has joined.
+- **Join:** tap **JOIN** and type the code, or just open the invite link (`…/?room=ABCD`).
+- **Team XP, personal builds:** everyone's gem pickups fill one XP bar. On each level-up the run pauses and every player picks their own upgrade (15 s, then one is picked for you).
+- **Downed, not dead:** at 0 HP you go down. A teammate who stands next to you for 3 seconds revives you at 30% HP. The run ends only when the whole squad is down.
+- **Ping:** press `G` (or tap the **PING** button) to drop a marker your squad can see, with an edge arrow when it's off-screen.
+- The swarm scales with squad size. Co-op best times are tracked separately from solo.
+
 ### Upgrades & weapons
 
 - **Blaster** (start) — auto-targeting shots; upgrades add fire rate, damage, projectiles, and pierce.
@@ -96,6 +107,31 @@ npx playwright install chromium   # one-time
 npm run smoke
 ```
 
+Unit tests (simulation, snapshots, relay rooms, sessions):
+
+```bash
+npm --prefix server install       # one-time: the relay's own dependencies
+npm test
+```
+
+### Co-op locally
+
+Co-op needs the small relay server in `server/` running next to the game:
+
+```bash
+npm --prefix server install
+npm --prefix server run dev                         # relay on ws://localhost:8787
+VITE_RELAY_URL=ws://localhost:8787 npm run dev      # game, in a second terminal
+```
+
+Open two browser windows: host in one, join with the code in the other. The two-browser smoke test does all of that automatically (starts its own relay on port 8788):
+
+```bash
+npm run smoke:coop
+```
+
+Without `VITE_RELAY_URL` the game still runs; the co-op buttons just show "Co-op unavailable".
+
 ---
 
 ## Deploy
@@ -109,6 +145,14 @@ npm i -g vercel && vercel --prod
 `vercel.json` is included.
 
 **GitHub Pages** — push to `main`; the included workflow at [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) builds and publishes to Pages automatically. (Enable Pages → Source: _GitHub Actions_ in repo settings once.)
+
+**Co-op relay (Render)** — co-op needs one always-on WebSocket server, which a static host can't provide. The relay in `server/` only keeps rooms and forwards messages (no game logic), and `render.yaml` deploys it:
+
+1. On [Render](https://render.com): **New → Blueprint**, pick this repo. It creates the `novaswarm-relay` web service (free plan) from `render.yaml`.
+2. Copy the service URL and set it as an environment variable on the static site, with `wss://` in front:
+   `VITE_RELAY_URL=wss://novaswarm-relay.onrender.com` (Vercel → Project → Settings → Environment Variables), then redeploy so the build picks it up.
+
+On Render's free plan the relay sleeps after ~15 minutes without traffic and takes about a minute to wake. The title screen sends a wake-up request as it loads and shows "Waking co-op server…" on the co-op buttons until it answers. A paid Render instance never sleeps (no code change).
 
 ---
 
@@ -127,9 +171,11 @@ src/
   core/     engine: math+RNG, loop, input, audio (renderer-agnostic)
   game/     config, types, world (pure simulation), player, enemies, upgrades, particles
   render/   Three.js layer: scene/lights/bloom, camera, robot loading+animation, instanced FX, world→scene sync
-  ui/       2D HUD overlay: HUD bars, title/level-up/pause/game-over screens, 3D→2D label projection
+  ui/       2D HUD overlay: HUD bars, title/level-up/pause/game-over screens, co-op lobby, 3D→2D label projection
+  net/      co-op: relay protocol + client, binary world snapshots, host/client sessions
   main.ts   canvas setup, asset preload, state machine, game loop
-test/       headless Playwright smoke test
+server/     co-op relay (Node + ws): rooms, reconnect grace, message forwarding — no game logic
+test/       Playwright smoke tests (solo + two-browser co-op) and vitest unit tests (test/unit/)
 public/models/  the RobotExpressive.glb asset
 docs/       design notes, AI workflow, screenshots
 ```

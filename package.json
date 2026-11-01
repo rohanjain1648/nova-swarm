@@ -3,14 +3,15 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "description": "NOVA SWARM — a neon roguelite wave-survivor built for the Parsewave Game Jam.",
+  "description": "NOVA SWARM \u2014 a neon roguelite wave-survivor built for the Parsewave Game Jam.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --port 4173",
     "typecheck": "tsc --noEmit",
     "smoke": "node test/smoke.mjs",
-    "test": "vitest run"
+    "test": "vitest run",
+    "smoke:coop": "node test/coop-smoke.mjs"
   },
   "devDependencies": {
     "@types/three": "^0.185.1",
