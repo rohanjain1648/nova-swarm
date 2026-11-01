@@ -159,7 +159,7 @@ function handlePlaying(dt: number): void {
     input.consumeConfirm();
     return;
   }
-  world.update(dt, input);
+  world.update(dt, [input.read()]);
   if (world.gameOver) finishRun();
   else if (world.pendingLevelUps > 0) openLevelUp();
 }

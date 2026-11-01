@@ -1,14 +1,13 @@
 import { SpatialGrid } from "../core/grid";
 import { angleTo, clamp, dist, len, RNG, TAU } from "../core/math";
 import type { Audio } from "../core/audio";
-import type { Input } from "../core/input";
 import { PALETTE, WORLD, xpForLevel } from "./config";
 import type { EnemyKind } from "./config";
 import { Director, initEnemy, ringPoint, shooterConfig } from "./enemies";
 import { Particles } from "./particles";
 import { Player } from "./player";
 import { rollUpgrades, upgradeLabel, type Upgrade } from "./upgrades";
-import type { Bullet, Enemy, EnemyBullet, Gem } from "./types";
+import type { Bullet, Enemy, EnemyBullet, Gem, PlayerInput } from "./types";
 
 export interface NovaRing {
   x: number;
@@ -164,10 +163,10 @@ export class World {
   }
 
   // ---- Simulation ---------------------------------------------------------
-  update(dt: number, input: Input): void {
+  update(dt: number, inputs: readonly PlayerInput[]): void {
     if (this.gameOver) return;
     this.time += dt;
-    input.update();
+    const input = inputs[0];
 
     this.movePlayer(dt, input);
     this.updateEnemies(dt);
@@ -177,14 +176,14 @@ export class World {
     // and fires — it never moves it. Aim wins over movement for facing, and
     // with no input at all the robot holds heading and stays silent. Touch
     // drag (mobile, single input) both moves and fires.
-    const steering = input.move.x !== 0 || input.move.y !== 0;
-    if (input.aim.active) {
-      this.player.facing = Math.atan2(input.aim.y, input.aim.x);
+    const steering = input.moveX !== 0 || input.moveY !== 0;
+    if (input.aimActive) {
+      this.player.facing = Math.atan2(input.aimY, input.aimX);
     } else if (steering) {
-      this.player.facing = Math.atan2(input.move.y, input.move.x);
+      this.player.facing = Math.atan2(input.moveY, input.moveX);
     }
 
-    this.fireWeapons(dt, input.aim.active || input.touchSteering);
+    this.fireWeapons(dt, input.firing);
     this.updateBullets(dt);
     this.updateEnemyBullets(dt);
     this.contactDamage();
@@ -214,10 +213,10 @@ export class World {
     if (p.hp <= 0) this.die();
   }
 
-  private movePlayer(dt: number, input: Input): void {
+  private movePlayer(dt: number, input: PlayerInput): void {
     const p = this.player;
-    const targetVx = input.move.x * p.speed;
-    const targetVy = input.move.y * p.speed;
+    const targetVx = input.moveX * p.speed;
+    const targetVy = input.moveY * p.speed;
     // Snappy but not instant — small accel for weightiness.
     p.vx += (targetVx - p.vx) * Math.min(1, dt * 16);
     p.vy += (targetVy - p.vy) * Math.min(1, dt * 16);

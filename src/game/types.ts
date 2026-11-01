@@ -97,3 +97,27 @@ export interface FloatText {
   size: number;
   dead: boolean;
 }
+
+/**
+ * One player's controls for a single sim step. The simulation reads only this
+ * struct, never the live `Input`, so a remote player's controls can arrive
+ * over the network in the same shape.
+ */
+export interface PlayerInput {
+  moveX: number;
+  moveY: number;
+  /** Mouse held: `aimX/aimY` is a unit direction that overrides facing. */
+  aimActive: boolean;
+  aimX: number;
+  aimY: number;
+  firing: boolean;
+}
+
+export const IDLE_INPUT: Readonly<PlayerInput> = Object.freeze({
+  moveX: 0,
+  moveY: 0,
+  aimActive: false,
+  aimX: 1,
+  aimY: 0,
+  firing: false,
+});

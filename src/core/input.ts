@@ -7,6 +7,7 @@
  */
 
 import { clamp, len } from "./math";
+import type { PlayerInput } from "../game/types";
 
 export class Input {
   private keys = new Set<string>();
@@ -186,6 +187,19 @@ export class Input {
     }
     this.move.x = x;
     this.move.y = y;
+  }
+
+  /** Recompute this step's controls and return them as a plain struct for the sim. */
+  read(): PlayerInput {
+    this.update();
+    return {
+      moveX: this.move.x,
+      moveY: this.move.y,
+      aimActive: this.aim.active,
+      aimX: this.aim.x,
+      aimY: this.aim.y,
+      firing: this.aim.active || this.moveFromTouch,
+    };
   }
 
   /** True while a touch drag is driving movement (mobile fires while moving). */
