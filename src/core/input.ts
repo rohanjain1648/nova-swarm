@@ -144,13 +144,18 @@ export class Input {
     if (this.isDown("KeyW", "ArrowUp")) y -= 1;
     if (this.isDown("KeyS", "ArrowDown")) y += 1;
 
-    if (x === 0 && y === 0 && this.pointerActive && this.usingTouch) {
-      // Virtual stick: vector from origin, dead-zone + saturation.
-      const dx = this.pointerX - this.pointerOriginX;
-      const dy = this.pointerY - this.pointerOriginY;
+    if (x === 0 && y === 0 && this.pointerActive) {
+      // Virtual stick. Touch: relative to where the finger went down.
+      // Mouse: relative to the screen centre (the camera keeps the robot
+      // there), so holding the button steers the robot toward the cursor —
+      // click in a direction and the robot moves that way.
+      const originX = this.usingTouch ? this.pointerOriginX : innerWidth / 2;
+      const originY = this.usingTouch ? this.pointerOriginY : innerHeight / 2;
+      const dx = this.pointerX - originX;
+      const dy = this.pointerY - originY;
       const l = len(dx, dy);
-      const dead = 8;
-      const full = 70;
+      const dead = this.usingTouch ? 8 : 24;
+      const full = this.usingTouch ? 70 : 150;
       if (l > dead) {
         const mag = clamp((l - dead) / (full - dead), 0, 1);
         x = (dx / l) * mag;

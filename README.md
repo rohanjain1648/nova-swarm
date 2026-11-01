@@ -2,7 +2,7 @@
 
 **A real-time 3D roguelite wave-survivor.** Outlast an endless swarm of rogue robots, sweep up glowing XP crystals, and choose an upgrade every level to sculpt a build that turns your lone robot into a screen-clearing storm. One more run.
 
-> Built solo in 24 hours for the **Parsewave Game Jam** (build window: 10–11 July 2026).
+>
 
 - 🎮 **Play it:** `https://<your-deployment-url>`  ← _fill in after deploy (Vercel / GitHub Pages)_
 - 📦 **Source:** `https://github.com/<you>/novaswarm`  ← _fill in_

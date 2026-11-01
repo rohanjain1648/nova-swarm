@@ -340,5 +340,8 @@ if (new URLSearchParams(location.search).has("debug")) {
     pending: world.pendingLevelUps,
     time: Math.round(world.time),
     facingDeg: Math.round((world.player.facing * 180) / Math.PI),
+    px: Math.round(world.player.x),
+    py: Math.round(world.player.y),
+    liveBullets: world.bullets.reduce((n, b) => n + (b.dead ? 0 : 1), 0),
   });
 }

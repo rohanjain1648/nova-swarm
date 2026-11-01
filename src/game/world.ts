@@ -173,14 +173,16 @@ export class World {
     this.updateEnemies(dt);
     this.grid.rebuild(this.enemies);
 
-    const target = this.grid.nearest(this.player.x, this.player.y, 1400);
-    // The robot faces (and thus visibly aims at) the nearest enemy it's
-    // auto-firing on; holds its last heading only when nothing is in range.
-    // This keeps facing and firing visually consistent — the robot looks like
-    // it's shooting at what it's pointed at, and turns to track the swarm.
-    this.player.facing = target ? angleTo(this.player.x, this.player.y, target.x, target.y) : this.player.facing;
+    // The robot obeys manual input only: it faces the direction being steered
+    // (keyboard or held click), holds its last heading when idle, and the
+    // blaster fires along that heading — only while the player is steering.
+    // No input → no movement, no blaster fire.
+    const steering = input.move.x !== 0 || input.move.y !== 0;
+    if (steering) {
+      this.player.facing = Math.atan2(input.move.y, input.move.x);
+    }
 
-    this.fireWeapons(dt, target);
+    this.fireWeapons(dt, steering);
     this.updateBullets(dt);
     this.updateEnemyBullets(dt);
     this.contactDamage();
@@ -272,16 +274,17 @@ export class World {
   }
 
   // ---- Weapons ------------------------------------------------------------
-  private fireWeapons(dt: number, target: Enemy | null): void {
+  private fireWeapons(dt: number, firing: boolean): void {
     const p = this.player;
 
-    // Blaster: aimed volley at nearest enemy.
+    // Blaster: volley along the direction the player is steering. Fires only
+    // while there is manual input, so an idle robot never shoots on its own.
     p.blasterCd -= dt;
-    if (p.blasterCd <= 0 && target) {
+    if (p.blasterCd <= 0 && firing) {
       p.blasterCd = p.blasterInterval;
       const n = p.blasterProjectiles;
       const spread = n > 1 ? 0.24 : 0;
-      const base = angleTo(p.x, p.y, target.x, target.y);
+      const base = p.facing;
       for (let i = 0; i < n; i++) {
         const t = n > 1 ? i / (n - 1) - 0.5 : 0;
         this.fireBullet(base + t * spread * (n - 1) * 0.5 + t * spread);

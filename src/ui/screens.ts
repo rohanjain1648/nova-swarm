@@ -227,7 +227,7 @@ export function drawTitle(ctx: CanvasRenderingContext2D, w: number, h: number, t
   ctx.fillText("HOW TO PLAY", w / 2, panelTop + 24);
 
   const controlsMaxW = panel.w * 0.92;
-  const controls1 = "Move: WASD / Arrows / drag  •  You fire automatically";
+  const controls1 = "Move: WASD / Arrows / hold click  •  Fires where you steer";
   const controls2 = "Pick upgrades on level-up  •  M mutes  •  ESC pauses";
   const controlsSize = Math.min(
     fitFontSize(ctx, controls1, 500, controlsMaxW, 14),

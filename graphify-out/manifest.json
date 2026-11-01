@@ -1,0 +1,182 @@
+{
+  "package.json": {
+    "mtime": 1783697808.6098895,
+    "ast_hash": "b9ee06ac854a8464e9b2ce48f7e3436c",
+    "semantic_hash": "b9ee06ac854a8464e9b2ce48f7e3436c"
+  },
+  "src/core/audio.ts": {
+    "mtime": 1783690475.9776864,
+    "ast_hash": "7b75cb03638c74b3e68cbb9beef6a516",
+    "semantic_hash": "7b75cb03638c74b3e68cbb9beef6a516"
+  },
+  "src/core/grid.ts": {
+    "mtime": 1783691248.1099646,
+    "ast_hash": "970d8c949d7e2866823e2ae41bd43b04",
+    "semantic_hash": "970d8c949d7e2866823e2ae41bd43b04"
+  },
+  "src/core/input.ts": {
+    "mtime": 1783691252.7112105,
+    "ast_hash": "98cddc70f9d418315074ab34b8335943",
+    "semantic_hash": "98cddc70f9d418315074ab34b8335943"
+  },
+  "src/core/loop.ts": {
+    "mtime": 1783690344.1887195,
+    "ast_hash": "65c69deb9e92c6246dbaec7e247a5fa2",
+    "semantic_hash": "65c69deb9e92c6246dbaec7e247a5fa2"
+  },
+  "src/core/math.ts": {
+    "mtime": 1783690331.820956,
+    "ast_hash": "1a992b50b0cc4a1412e98f1fb3e39046",
+    "semantic_hash": "1a992b50b0cc4a1412e98f1fb3e39046"
+  },
+  "src/game/config.ts": {
+    "mtime": 1783699590.5660117,
+    "ast_hash": "6a1337ab0d184d90754d55c030c0aff7",
+    "semantic_hash": "6a1337ab0d184d90754d55c030c0aff7"
+  },
+  "src/game/enemies.ts": {
+    "mtime": 1783699540.2955332,
+    "ast_hash": "7a603fbd70a5c517361d4e1f70660cbe",
+    "semantic_hash": "7a603fbd70a5c517361d4e1f70660cbe"
+  },
+  "src/game/particles.ts": {
+    "mtime": 1783697649.1627038,
+    "ast_hash": "beaa8e4365e181d5c5697b86de111a4b",
+    "semantic_hash": "beaa8e4365e181d5c5697b86de111a4b"
+  },
+  "src/game/player.ts": {
+    "mtime": 1783713579.191489,
+    "ast_hash": "09cce21e2f22c93012a86e56780b3e73",
+    "semantic_hash": "09cce21e2f22c93012a86e56780b3e73"
+  },
+  "src/game/types.ts": {
+    "mtime": 1783699534.6015172,
+    "ast_hash": "9aaf7705c621ac6f6762224c3f381331",
+    "semantic_hash": "9aaf7705c621ac6f6762224c3f381331"
+  },
+  "src/game/upgrades.ts": {
+    "mtime": 1783690637.8854628,
+    "ast_hash": "738b918f05b1da22a9599aa42b4f4e6b",
+    "semantic_hash": "738b918f05b1da22a9599aa42b4f4e6b"
+  },
+  "src/game/world.ts": {
+    "mtime": 1783713568.2675393,
+    "ast_hash": "be9aaffae7ae5be3a70da16899b52c29",
+    "semantic_hash": "be9aaffae7ae5be3a70da16899b52c29"
+  },
+  "src/main.ts": {
+    "mtime": 1783712650.430438,
+    "ast_hash": "0be76ca8f24d9bbae9f335556c896568",
+    "semantic_hash": "0be76ca8f24d9bbae9f335556c896568"
+  },
+  "src/render/camera3d.ts": {
+    "mtime": 1783697458.7343752,
+    "ast_hash": "c537c82510708fc4cc5fbbdb0341c215",
+    "semantic_hash": "c537c82510708fc4cc5fbbdb0341c215"
+  },
+  "src/render/fx.ts": {
+    "mtime": 1783698978.687303,
+    "ast_hash": "77f34c7ba44cf88509d8e2a60c774243",
+    "semantic_hash": "77f34c7ba44cf88509d8e2a60c774243"
+  },
+  "src/render/robots.ts": {
+    "mtime": 1783697595.8888216,
+    "ast_hash": "8c7b19d7874705676f44852539182a74",
+    "semantic_hash": "8c7b19d7874705676f44852539182a74"
+  },
+  "src/render/scene.ts": {
+    "mtime": 1783698909.4005613,
+    "ast_hash": "c0a25031724724dec83b3a18ecfdb091",
+    "semantic_hash": "c0a25031724724dec83b3a18ecfdb091"
+  },
+  "src/render/worldView.ts": {
+    "mtime": 1783698994.8196175,
+    "ast_hash": "a01fa701b5a122e9cbcfb8ed2b593c2a",
+    "semantic_hash": "a01fa701b5a122e9cbcfb8ed2b593c2a"
+  },
+  "src/ui/hud.ts": {
+    "mtime": 1783690976.4046092,
+    "ast_hash": "ab0bca69c1417c52f6a5860a8b622f8b",
+    "semantic_hash": "ab0bca69c1417c52f6a5860a8b622f8b"
+  },
+  "src/ui/labels3d.ts": {
+    "mtime": 1783697747.3654423,
+    "ast_hash": "bed246df4e58e1d0ab62686474198594",
+    "semantic_hash": "bed246df4e58e1d0ab62686474198594"
+  },
+  "src/ui/screens.ts": {
+    "mtime": 1783712582.116998,
+    "ast_hash": "90b365109e3397d6545ee6d7b87a604b",
+    "semantic_hash": "90b365109e3397d6545ee6d7b87a604b"
+  },
+  "src/vite-env.d.ts": {
+    "mtime": 1783697830.2326043,
+    "ast_hash": "0352474ba2918efe13895edbc3780d94",
+    "semantic_hash": "0352474ba2918efe13895edbc3780d94"
+  },
+  "test/smoke.mjs": {
+    "mtime": 1783699379.419915,
+    "ast_hash": "6173fbeab8b0e071fedd7e834da6cced",
+    "semantic_hash": "6173fbeab8b0e071fedd7e834da6cced"
+  },
+  "tsconfig.json": {
+    "mtime": 1783690238.789803,
+    "ast_hash": "bcfbcfc74752c9c921f7362f31557039",
+    "semantic_hash": "bcfbcfc74752c9c921f7362f31557039"
+  },
+  "vercel.json": {
+    "mtime": 1783693112.5673604,
+    "ast_hash": "b722a6e2520a39b994b35dada980af02",
+    "semantic_hash": "b722a6e2520a39b994b35dada980af02"
+  },
+  "vite.config.ts": {
+    "mtime": 1783690244.346908,
+    "ast_hash": "fe35d3c5b0b50450cc05b1452dd0afd5",
+    "semantic_hash": "fe35d3c5b0b50450cc05b1452dd0afd5"
+  },
+  ".github/workflows/deploy.yml": {
+    "mtime": 1783693119.6577544,
+    "ast_hash": "995bbe858dcaf0c7d57b6268522cc5a2",
+    "semantic_hash": "995bbe858dcaf0c7d57b6268522cc5a2"
+  },
+  "README.md": {
+    "mtime": 1783714825.024009,
+    "ast_hash": "7e8ea24079b2a62c9d5c10524598bbda",
+    "semantic_hash": "7e8ea24079b2a62c9d5c10524598bbda"
+  },
+  "docs/AI_WORKFLOW.md": {
+    "mtime": 1783699802.931684,
+    "ast_hash": "9ada1a8061a017ac168e4e44e9515f6b",
+    "semantic_hash": "9ada1a8061a017ac168e4e44e9515f6b"
+  },
+  "docs/DESIGN.md": {
+    "mtime": 1783699767.244689,
+    "ast_hash": "5149e10e0defbde87764fdec9b68426a",
+    "semantic_hash": "5149e10e0defbde87764fdec9b68426a"
+  },
+  "index.html": {
+    "mtime": 1783697674.4835186,
+    "ast_hash": "9acdc067833db3165cb819a2c5bee554",
+    "semantic_hash": "9acdc067833db3165cb819a2c5bee554"
+  },
+  "docs/screenshot-gameplay.png": {
+    "mtime": 1783699924.3901975,
+    "ast_hash": "0243f2d80ec433d7aff753bc99925a3e",
+    "semantic_hash": "0243f2d80ec433d7aff753bc99925a3e"
+  },
+  "docs/screenshot-levelup.png": {
+    "mtime": 1783700091.5368285,
+    "ast_hash": "6be7c58733b4f0df094f065f1ab24291",
+    "semantic_hash": "6be7c58733b4f0df094f065f1ab24291"
+  },
+  "docs/screenshot-title.png": {
+    "mtime": 1783699835.889221,
+    "ast_hash": "9c1143a58f09ec53a80a9ada8c4e71c3",
+    "semantic_hash": "9c1143a58f09ec53a80a9ada8c4e71c3"
+  },
+  "public/favicon.svg": {
+    "mtime": 1783692979.985602,
+    "ast_hash": "c8cd5553a8bc2421223fd63aeb209c33",
+    "semantic_hash": "c8cd5553a8bc2421223fd63aeb209c33"
+  }
+}
