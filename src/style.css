@@ -59,3 +59,81 @@ body::after {
   pointer-events: none;
   opacity: 0;
 }
+
+/* ---- Co-op room-code entry (a real input so phones open their keyboard) ---- */
+.code-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(3, 4, 8, 0.7);
+  touch-action: auto;
+}
+
+.code-card {
+  width: min(340px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 24px;
+  border: 1.5px solid rgba(63, 233, 255, 0.45);
+  border-radius: 16px;
+  background: linear-gradient(rgba(20, 28, 48, 0.95), rgba(8, 10, 20, 0.95));
+  color: #eafcff;
+  text-align: center;
+}
+
+.code-card label {
+  font-weight: 800;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  color: #3fe9ff;
+}
+
+.code-card input {
+  font: 900 40px "Segoe UI", system-ui, sans-serif;
+  letter-spacing: 0.3em;
+  text-align: center;
+  text-transform: uppercase;
+  padding: 8px 0 8px 0.3em;
+  border: 1.5px solid rgba(230, 244, 255, 0.3);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: #eafcff;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.code-card input:focus {
+  outline: 2px solid #3fe9ff;
+  outline-offset: 2px;
+}
+
+.code-error {
+  min-height: 1.2em;
+  font-size: 13px;
+  font-weight: 700;
+  color: #ff3d6e;
+}
+
+.code-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.code-buttons button {
+  font: 800 16px "Segoe UI", system-ui, sans-serif;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(230, 244, 255, 0.4);
+  background: rgba(255, 255, 255, 0.06);
+  color: #eafcff;
+  cursor: pointer;
+}
+
+.code-buttons .code-join {
+  border-color: #5b7bff;
+  background: rgba(91, 123, 255, 0.18);
+}
