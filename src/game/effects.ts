@@ -20,8 +20,12 @@ export type Effect =
   | { k: "flash"; color: string; i: number; slot: number }
   | { k: "trauma"; v: number; slot: number };
 
+export type HapticKind = "hit" | "levelup" | "gameover";
+
 export interface EffectTarget {
   readonly particles: Particles;
+  /** Set by the app build; the website has no vibration to drive. */
+  readonly onHaptic?: ((kind: HapticKind) => void) | null;
   flash(color: string, intensity: number): void;
   addTrauma(v: number): void;
 }
@@ -31,7 +35,13 @@ const forMe = (slot: number, localSlot: number): boolean => slot === -1 || slot 
 export function applyEffect(t: EffectTarget, audio: Audio, ev: Effect, localSlot: number): void {
   switch (ev.k) {
     case "sfx":
-      if (forMe(ev.slot, localSlot)) audio[ev.n]();
+      if (forMe(ev.slot, localSlot)) {
+        audio[ev.n]();
+        if (ev.n === "hurt") t.onHaptic?.("hit");
+        else if (ev.n === "levelup") t.onHaptic?.("levelup");
+        // A targeted bigKill is this player going down; slot -1 is a boss dying.
+        else if (ev.n === "bigKill" && ev.slot !== -1) t.onHaptic?.("gameover");
+      }
       break;
     case "spark":
       t.particles.spark(ev.x, ev.y, ev.color, ev.count, ev.speed, ev.size);

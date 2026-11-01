@@ -152,3 +152,39 @@ test("reset clears a co-op boss bar so it can't leak into solo", () => {
   w.reset();
   expect(w.bossHpFraction).toBeNull();
 });
+
+test("a slot's class stats are applied at reset; a classless slot stays plain", () => {
+  w.reset([{ slot: 0, name: "A" }, { slot: 1, name: "B", archetype: "vanguard" }]);
+  expect(w.players[0].maxHp).toBe(PLAYER.baseHp);
+  expect(w.players[1].maxHp).toBe(Math.round(PLAYER.baseHp * 1.5));
+  expect(w.players[1].hp).toBe(w.players[1].maxHp);
+  expect(w.players[1].armor).toBe(4);
+});
+
+test("an unknown class from the network is ignored", () => {
+  w.reset([{ slot: 0, name: "A", archetype: "wizard" as never }]);
+  expect(w.players[0].maxHp).toBe(PLAYER.baseHp);
+});
+
+test("firing kicks the shooter's recoil and a contact hit sets the enemy's punch", () => {
+  quietDirector();
+  at(0, 0, 0);
+  at(1, 900, 0);
+  w.update(DT, [{ ...IDLE_INPUT, firing: true, aimActive: true }, IDLE_INPUT]);
+  expect(w.players[0].recoilT).toBeGreaterThan(0.9);
+  spawn("grunt", 900, 0);
+  runFor(w, 0.1, IDLE2);
+  expect(w.enemies.find((e) => !e.dead)!.punchT).toBeGreaterThan(0);
+});
+
+test("haptics fire only for this player's own hurt and for shared level-ups", () => {
+  const got: string[] = [];
+  w.onHaptic = (k) => got.push(k);
+  w.applyEffect({ k: "sfx", n: "hurt", slot: 1 });
+  expect(got).toEqual([]);
+  w.applyEffect({ k: "sfx", n: "hurt", slot: 0 });
+  w.applyEffect({ k: "sfx", n: "levelup", slot: -1 });
+  w.applyEffect({ k: "sfx", n: "bigKill", slot: -1 });
+  w.applyEffect({ k: "sfx", n: "bigKill", slot: 0 });
+  expect(got).toEqual(["hit", "levelup", "gameover"]);
+});

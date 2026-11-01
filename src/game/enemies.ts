@@ -49,6 +49,7 @@ export function initEnemy(e: Enemy, kind: EnemyKind, x: number, y: number, t: nu
   e.isBoss = boss;
   e.splitInto = def.splitInto;
   e.spawnT = 0;
+  e.punchT = 0;
 }
 
 export const shooterConfig = (kind: EnemyKind) => defFor(kind).shooter;

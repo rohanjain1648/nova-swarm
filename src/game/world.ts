@@ -3,7 +3,8 @@ import { angleTo, clamp, dist, dist2, len, RNG, TAU } from "../core/math";
 import type { Audio } from "../core/audio";
 import { COOP, PALETTE, PLAYER, WORLD, xpForLevel } from "./config";
 import type { EnemyKind } from "./config";
-import { applyEffect, type Effect } from "./effects";
+import { ARCHETYPES, isArchetypeId, type ArchetypeId } from "./archetypes";
+import { applyEffect, type Effect, type HapticKind } from "./effects";
 import { Director, initEnemy, ringPoint, shooterConfig } from "./enemies";
 import { Particles } from "./particles";
 import { Player } from "./player";
@@ -35,6 +36,8 @@ export interface Ping {
 export interface SlotInfo {
   slot: number;
   name: string;
+  /** Robot class (app players). Website players have none and keep the plain stats. */
+  archetype?: ArchetypeId;
 }
 
 /**
@@ -79,6 +82,8 @@ export class World {
 
   /** Which player's screen this World drives (effects targeted elsewhere are skipped). */
   localSlot = 0;
+  /** App only: vibrate for this player's own hits, level-ups and going down. */
+  onHaptic: ((kind: HapticKind) => void) | null = null;
   /** Host only: also buffer every emitted effect so it can be sent to clients. */
   recordEffects = false;
   private effectBuf: Effect[] = [];
@@ -94,6 +99,7 @@ export class World {
     p.slot = info.slot;
     p.name = info.name;
     p.active = active;
+    if (isArchetypeId(info.archetype)) ARCHETYPES[info.archetype].apply(p);
     return p;
   }
 
@@ -194,7 +200,7 @@ export class World {
       touchDamage: 0, xp: 0, kind: "grunt", color: "#fff",
       modelScale: 1, anim: "Idle", animSpeed: 1,
       dead: true, flash: 0, kbx: 0, kby: 0, shootCd: 0,
-      isBoss: false, spawnT: 0,
+      isBoss: false, spawnT: 0, punchT: 0,
     };
     this.enemies.push(e);
     return e;
@@ -293,6 +299,7 @@ export class World {
       if (!p.active) continue;
       if (p.invuln > 0) p.invuln -= dt;
       if (p.hurtFlash > 0) p.hurtFlash = Math.max(0, p.hurtFlash - dt * 3);
+      if (p.recoilT > 0) p.recoilT = Math.max(0, p.recoilT - dt * 4);
       if (p.pingCd > 0) p.pingCd -= dt;
       if (!p.downed && p.regen > 0 && p.hp < p.maxHp) {
         p.regenFrac += p.regen * dt;
@@ -433,6 +440,7 @@ export class World {
       if (e.dead) continue;
       e.spawnT += dt;
       if (e.flash > 0) e.flash = Math.max(0, e.flash - dt * 5);
+      if (e.punchT > 0) e.punchT = Math.max(0, e.punchT - dt);
 
       const p = this.nearestLiving(e.x, e.y) ?? this.player;
       const a = angleTo(e.x, e.y, p.x, p.y);
@@ -484,6 +492,7 @@ export class World {
     p.blasterCd -= dt;
     if (p.blasterCd <= 0 && firing) {
       p.blasterCd = p.blasterInterval;
+      p.recoilT = 1;
       const n = p.blasterProjectiles;
       const spread = n > 1 ? 0.24 : 0;
       const base = p.facing;
@@ -670,6 +679,7 @@ export class World {
         if (dist(p.x, p.y, e.x, e.y) <= p.radius + e.radius) {
           if (p.takeDamage(e.touchDamage)) {
             this.onPlayerHurt(p);
+            e.punchT = 0.35;
             // Small knockback to the enemy so you're not instantly re-hit.
             const a = angleTo(e.x, e.y, p.x, p.y);
             e.kbx -= Math.cos(a) * 160;

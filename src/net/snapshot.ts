@@ -32,6 +32,7 @@ export interface PlayerSnap {
   blaster: number;
   nova: number;
   pingCd: number;
+  recoilT: number;
 }
 
 export interface EnemySnap {
@@ -41,6 +42,7 @@ export interface EnemySnap {
   y: number;
   flash: number;
   spawnT: number;
+  punchT: number;
 }
 
 export interface PoolSnap {
@@ -78,7 +80,7 @@ export interface Snapshot {
 }
 
 const KINDS: EnemyKind[] = ["grunt", "fast", "tank", "splitter", "shooter", "boss"];
-const VERSION = 2;
+const VERSION = 3;
 /** A pooled bullet/gem that moved further than this between snapshots is a recycled slot, not motion. */
 const REUSE_JUMP = 150;
 
@@ -92,7 +94,7 @@ export function captureSnapshot(w: World, seq: number, waitingMask: number, effe
   };
   const enemies: EnemySnap[] = [];
   w.enemies.forEach((e, i) => {
-    if (!e.dead) enemies.push({ i, kind: e.kind, x: e.x, y: e.y, flash: e.flash, spawnT: e.spawnT });
+    if (!e.dead) enemies.push({ i, kind: e.kind, x: e.x, y: e.y, flash: e.flash, spawnT: e.spawnT, punchT: e.punchT });
   });
   const gems: GemSnap[] = [];
   w.gems.forEach((g, i) => {
@@ -112,7 +114,7 @@ export function captureSnapshot(w: World, seq: number, waitingMask: number, effe
       slot: p.slot, active: p.active, x: p.x, y: p.y, vx: p.vx, vy: p.vy, facing: p.facing,
       hp: p.hp, maxHp: p.maxHp, downed: p.downed, reviveT: p.reviveT, invuln: p.invuln,
       orbital: p.orbital, orbitAngle: p.orbitAngle, pickupRadius: p.pickupRadius, kills: p.kills,
-      speed: p.speed, blaster: p.blaster, nova: p.nova, pingCd: p.pingCd,
+      speed: p.speed, blaster: p.blaster, nova: p.nova, pingCd: p.pingCd, recoilT: p.recoilT,
     })),
     enemies,
     bullets: pool(w.bullets),
@@ -176,7 +178,7 @@ export function encodeSnapshot(s: Snapshot): Uint8Array {
   for (const p of s.players) {
     w.u8(p.slot);
     w.u8((p.active ? 1 : 0) | (p.downed ? 2 : 0));
-    for (const v of [p.x, p.y, p.vx, p.vy, p.facing, p.hp, p.maxHp, p.reviveT, p.invuln, p.orbitAngle, p.pickupRadius, p.speed, p.pingCd]) {
+    for (const v of [p.x, p.y, p.vx, p.vy, p.facing, p.hp, p.maxHp, p.reviveT, p.invuln, p.orbitAngle, p.pickupRadius, p.speed, p.pingCd, p.recoilT]) {
       w.f32(v);
     }
     w.u8(p.orbital);
@@ -193,6 +195,7 @@ export function encodeSnapshot(s: Snapshot): Uint8Array {
     w.f32(e.y);
     w.f32(e.flash);
     w.f32(e.spawnT);
+    w.f32(e.punchT);
   }
 
   for (const list of [s.bullets, s.enemyBullets]) {
@@ -262,17 +265,17 @@ export function decodeSnapshot(buf: ArrayBuffer | Uint8Array): Snapshot {
   for (let n = r.u8(); n > 0; n--) {
     const slot = r.u8();
     const flags = r.u8();
-    const [x, y, vx, vy, facing, hp, maxHp, reviveT, invuln, orbitAngle, pickupRadius, speed, pingCd] =
-      Array.from({ length: 13 }, () => r.f32());
+    const [x, y, vx, vy, facing, hp, maxHp, reviveT, invuln, orbitAngle, pickupRadius, speed, pingCd, recoilT] =
+      Array.from({ length: 14 }, () => r.f32());
     s.players.push({
       slot, active: (flags & 1) !== 0, downed: (flags & 2) !== 0,
-      x, y, vx, vy, facing, hp, maxHp, reviveT, invuln, orbitAngle, pickupRadius, speed, pingCd,
+      x, y, vx, vy, facing, hp, maxHp, reviveT, invuln, orbitAngle, pickupRadius, speed, pingCd, recoilT,
       orbital: r.u8(), blaster: r.u8(), nova: r.u8(), kills: r.u16(),
     });
   }
 
   for (let n = r.u16(); n > 0; n--) {
-    s.enemies.push({ i: r.u16(), kind: KINDS[r.u8()], x: r.f32(), y: r.f32(), flash: r.f32(), spawnT: r.f32() });
+    s.enemies.push({ i: r.u16(), kind: KINDS[r.u8()], x: r.f32(), y: r.f32(), flash: r.f32(), spawnT: r.f32(), punchT: r.f32() });
   }
 
   for (const list of [s.bullets, s.enemyBullets]) {
@@ -351,6 +354,7 @@ export function applySnapshot(w: World, a: Snapshot, b: Snapshot, t: number, loc
     p.blaster = pb.blaster;
     p.nova = pb.nova;
     p.pingCd = pb.pingCd;
+    p.recoilT = pb.recoilT;
   }
   for (const p of w.players) if (!seenSlots.has(p.slot)) p.active = false;
 
@@ -371,6 +375,7 @@ export function applySnapshot(w: World, a: Snapshot, b: Snapshot, t: number, loc
     e.y = lerp(from.y, eb.y, t);
     e.flash = eb.flash;
     e.spawnT = eb.spawnT;
+    e.punchT = eb.punchT;
     e.radius = def.radius;
     e.color = def.color;
     e.modelScale = def.modelScale;
@@ -426,7 +431,7 @@ const newEnemy = (): Enemy => ({
   touchDamage: 0, xp: 0, kind: "grunt", color: "#fff",
   modelScale: 1, anim: "Idle", animSpeed: 1,
   dead: true, flash: 0, kbx: 0, kby: 0, shootCd: 0,
-  isBoss: false, spawnT: 0,
+  isBoss: false, spawnT: 0, punchT: 0,
 });
 const newBullet = (): Bullet => ({
   x: 0, y: 0, vx: 0, vy: 0, radius: 5, damage: 0, pierce: 0, life: 0, dead: true, crit: false, hitCd: 0, owner: 0,

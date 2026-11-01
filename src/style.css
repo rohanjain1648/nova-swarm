@@ -66,7 +66,7 @@ body::after {
   inset: 0;
   z-index: 10;
   display: grid;
-  place-items: center;
+  place-items: start center;
   padding: 16px;
   background: rgba(3, 4, 8, 0.7);
   touch-action: auto;

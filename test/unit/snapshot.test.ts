@@ -15,10 +15,10 @@ import { aimAtNearest, silentAudio } from "./helpers";
 const player = (slot: number, over: Partial<PlayerSnap> = {}): PlayerSnap => ({
   slot, active: true, x: 10 * slot, y: -5, vx: 1, vy: 2, facing: 0.5, hp: 80, maxHp: 100, downed: false,
   reviveT: 0, invuln: 0, orbital: 0, orbitAngle: 0, pickupRadius: 130, kills: 3,
-  speed: 210, blaster: 1, nova: 0, pingCd: 0, ...over,
+  speed: 210, blaster: 1, nova: 0, pingCd: 0, recoilT: 0, ...over,
 });
 const enemy = (i: number, over: Partial<EnemySnap> = {}): EnemySnap => ({
-  i, kind: "grunt", x: 0, y: 0, flash: 0, spawnT: 1, ...over,
+  i, kind: "grunt", x: 0, y: 0, flash: 0, spawnT: 1, punchT: 0, ...over,
 });
 const snap = (over: Partial<Snapshot> = {}): Snapshot => ({
   seq: 1, time: 12.5, level: 3, xp: 4.25, xpToNext: 30, kills: 0, bossHp: -1, waitingMask: 0, gameOver: false,
@@ -148,4 +148,14 @@ test("a reused bullet/gem slot that jumped far is not interpolated", () => {
   const c = snap({ bullets: [{ i: 0, x: 832, y: 0, r: 5 }] });
   applySnapshot(w, b, c, 0.5, 0);
   expect(w.bullets[0].x).toBeCloseTo(816);
+});
+
+test("recoil and punch survive the wire and reach the view world", () => {
+  const w = new World(silentAudio());
+  w.reset([{ slot: 0, name: "A" }, { slot: 1, name: "B" }]);
+  const b = snap({ players: [player(0, { recoilT: 0.75 }), player(1)], enemies: [enemy(0, { punchT: 0.25 })] });
+  const d = decodeSnapshot(encodeSnapshot(b));
+  applySnapshot(w, d, d, 1, 1);
+  expect(w.players[0].recoilT).toBeCloseTo(0.75);
+  expect(w.enemies[0].punchT).toBeCloseTo(0.25);
 });

@@ -1,3 +1,4 @@
+import { isArchetypeId, type ArchetypeId } from "../game/archetypes";
 import { COOP } from "../game/config";
 import { IDLE_INPUT, type PlayerInput } from "../game/types";
 import { toCard, type Upgrade, type UpgradeCard } from "../game/upgrades";
@@ -26,6 +27,8 @@ export class HostSession {
   private round = 0;
   private open: Huddle | null = null;
   private inputs: PlayerInput[] = [];
+  /** Robot classes announced by joiners, by slot. */
+  private readonly classes = new Map<number, ArchetypeId>();
   overInfo: OverInfo | null = null;
 
   constructor(
@@ -35,6 +38,7 @@ export class HostSession {
 
   start(slots: SlotInfo[]): void {
     const w = this.world;
+    slots = slots.map((s) => ({ ...s, archetype: s.archetype ?? this.classes.get(s.slot) }));
     w.reset(slots);
     w.localSlot = 0;
     w.recordEffects = true;
@@ -92,10 +96,15 @@ export class HostSession {
     if (m.k === "pose") this.world.setRemotePose(from, m.x, m.y, m.facing, m.firing);
     else if (m.k === "pick") this.pick(from, m.round, m.index);
     else if (m.k === "ping") this.world.addPing(from);
+    else if (m.k === "hello" && isArchetypeId(m.archetype)) this.classes.set(from, m.archetype);
   }
 
   /** Relay roster changed: a disconnected player idles; a removed one leaves the run. */
   onRoster(players: RosterEntry[]): void {
+    // A freed slot may be taken by someone else, who brings their own class (or none).
+    for (const slot of this.classes.keys()) {
+      if (!players.some((r) => r.slot === slot)) this.classes.delete(slot);
+    }
     for (const p of this.world.players) {
       if (p.slot === 0 || !p.active) continue;
       const entry = players.find((r) => r.slot === p.slot);
