@@ -4,9 +4,8 @@
 
 >
 
-- 🎮 **Play it:** `https://<your-deployment-url>`  ← _fill in after deploy (Vercel / GitHub Pages)_
-- 📦 **Source:** `https://github.com/<you>/novaswarm`  ← _fill in_
-
+- 🎮 **Play it:** `https://parsewave-sigma.vercel.app/` 
+- 📦 **Source:** `https://github.com/rohanjain1648/parsewave` 
 | Title | Level-up | Gameplay |
 |---|---|---|
 | ![title](docs/screenshot-title.png) | ![level-up](docs/screenshot-levelup.png) | ![gameplay](docs/screenshot-gameplay.png) |
