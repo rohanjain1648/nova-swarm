@@ -3,6 +3,7 @@ import { angleTo, clamp, dist, len, RNG, TAU } from "../core/math";
 import type { Audio } from "../core/audio";
 import { PALETTE, WORLD, xpForLevel } from "./config";
 import type { EnemyKind } from "./config";
+import { applyEffect, type Effect } from "./effects";
 import { Director, initEnemy, ringPoint, shooterConfig } from "./enemies";
 import { Particles } from "./particles";
 import { Player } from "./player";
@@ -59,6 +60,12 @@ export class World {
   flashT = 0; // full-screen flash intensity (level up / boss / death), read by the HUD overlay
   flashColor = "255,255,255";
 
+  /** Which player's screen this World drives (effects targeted elsewhere are skipped). */
+  localSlot = 0;
+  /** Host only: also buffer every emitted effect so it can be sent to clients. */
+  recordEffects = false;
+  private effectBuf: Effect[] = [];
+
   /** Spawn-ring radius around the player; the renderer sets this from its camera's visible extent. */
   private viewRadius = 900;
   private trauma = 0;
@@ -76,8 +83,25 @@ export class World {
     return t;
   }
 
-  private addTrauma(v: number): void {
+  addTrauma(v: number): void {
     this.trauma = Math.max(this.trauma, v);
+  }
+
+  /** Apply an effect to this World's screen/speakers (clients call this for replayed host effects). */
+  applyEffect(ev: Effect): void {
+    applyEffect(this, this.audio, ev, this.localSlot);
+  }
+
+  /** Return and clear the effects recorded since the last drain. */
+  drainEffects(): Effect[] {
+    const out = this.effectBuf;
+    this.effectBuf = [];
+    return out;
+  }
+
+  private emit(ev: Effect): void {
+    this.applyEffect(ev);
+    if (this.recordEffects) this.effectBuf.push(ev);
   }
 
   reset(): void {
@@ -145,9 +169,9 @@ export class World {
     initEnemy(e, kind, x, y, this.time);
     if (kind === "boss") {
       this.boss = e;
-      this.audio.bossWarn();
-      this.flash("255,200,90", 0.7);
-      this.addTrauma(0.6);
+      this.emit({ k: "sfx", n: "bossWarn", slot: -1 });
+      this.emit({ k: "flash", color: "255,200,90", i: 0.7, slot: -1 });
+      this.emit({ k: "trauma", v: 0.6, slot: -1 });
     }
   };
 
@@ -157,7 +181,7 @@ export class World {
     return n;
   }
 
-  private flash(color: string, intensity: number): void {
+  flash(color: string, intensity: number): void {
     this.flashColor = color;
     this.flashT = Math.max(this.flashT, intensity);
   }
@@ -203,12 +227,8 @@ export class World {
       }
     }
 
-    this.particles.update(dt);
     this.director.update(dt, this.time, p.x, p.y, this.viewRadius, this.aliveEnemyCount(), this.rng, this.spawnEnemyAt);
-    if (this.flashT > 0) this.flashT = Math.max(0, this.flashT - dt * 2.2);
-
-    // Music intensity ramps with time + on-screen pressure.
-    this.audio.setIntensity(clamp(this.time / 240 + this.aliveEnemyCount() / 400, 0, 1));
+    this.tickCosmetics(dt);
 
     if (p.hp <= 0) this.die();
   }
@@ -290,7 +310,7 @@ export class World {
         const t = n > 1 ? i / (n - 1) - 0.5 : 0;
         this.fireBullet(base + t * spread * (n - 1) * 0.5 + t * spread);
       }
-      this.audio.shoot();
+      this.emit({ k: "sfx", n: "shoot", slot: 0 });
     }
 
     // Orbitals: continuous contact damage around rotating points.
@@ -325,8 +345,8 @@ export class World {
             e.kby += Math.sin(a) * 260;
           }
         });
-        this.audio.hit();
-        this.addTrauma(0.18);
+        this.emit({ k: "sfx", n: "hit", slot: -1 });
+        this.emit({ k: "trauma", v: 0.18, slot: 0 });
       }
     }
   }
@@ -397,21 +417,24 @@ export class World {
       e.kbx += Math.cos(a) * knockback;
       e.kby += Math.sin(a) * knockback;
     }
-    this.particles.spark(hx, hy, e.color, crit ? 6 : 2, 200, crit ? 3.5 : 2.2);
-    if (crit) this.particles.text(hx, hy - 6, `${Math.round(dmg)}`, "#fff2a8", 20);
+    this.emit({ k: "spark", x: hx, y: hy, color: e.color, count: crit ? 6 : 2, speed: 200, size: crit ? 3.5 : 2.2 });
+    if (crit) this.emit({ k: "text", x: hx, y: hy - 6, text: `${Math.round(dmg)}`, color: "#fff2a8", size: 20 });
     if (e.hp <= 0) this.killEnemy(e);
-    else this.audio.hit();
+    else this.emit({ k: "sfx", n: "hit", slot: -1 });
   }
 
   private killEnemy(e: Enemy): void {
     e.dead = true;
     this.kills++;
-    this.particles.spark(e.x, e.y, e.color, e.isBoss ? 60 : 12, e.isBoss ? 460 : 260, e.isBoss ? 5 : 3);
+    this.emit({
+      k: "spark", x: e.x, y: e.y, color: e.color,
+      count: e.isBoss ? 60 : 12, speed: e.isBoss ? 460 : 260, size: e.isBoss ? 5 : 3,
+    });
 
     if (e.isBoss) {
-      this.audio.bigKill();
-      this.addTrauma(0.8);
-      this.flash("255,230,140", 0.8);
+      this.emit({ k: "sfx", n: "bigKill", slot: -1 });
+      this.emit({ k: "trauma", v: 0.8, slot: -1 });
+      this.emit({ k: "flash", color: "255,230,140", i: 0.8, slot: -1 });
       this.boss = null;
       this.director.bossActive = false;
       // Boss showers rewards.
@@ -421,8 +444,8 @@ export class World {
       }
       this.dropGem(e.x, e.y, 0, "heal");
     } else {
-      this.audio.kill();
-      this.addTrauma(0.08);
+      this.emit({ k: "sfx", n: "kill", slot: -1 });
+      this.emit({ k: "trauma", v: 0.08, slot: -1 });
       this.dropGem(e.x, e.y, e.xp, "xp");
       if (this.rng.chance(0.02)) this.dropGem(e.x + 12, e.y, 0, "heal");
       // Splitters spawn children on death.
@@ -466,10 +489,10 @@ export class World {
   }
 
   private onPlayerHurt(): void {
-    this.audio.hurt();
-    this.addTrauma(0.5);
-    this.flash("255,60,90", 0.45);
-    this.particles.spark(this.player.x, this.player.y, PALETTE.danger, 14, 240, 3);
+    this.emit({ k: "sfx", n: "hurt", slot: 0 });
+    this.emit({ k: "trauma", v: 0.5, slot: 0 });
+    this.emit({ k: "flash", color: "255,60,90", i: 0.45, slot: 0 });
+    this.emit({ k: "spark", x: this.player.x, y: this.player.y, color: PALETTE.danger, count: 14, speed: 240, size: 3 });
   }
 
   private updateGems(dt: number): void {
@@ -501,11 +524,11 @@ export class World {
         g.dead = true;
         if (g.kind === "heal") {
           p.hp = Math.min(p.maxHp, p.hp + Math.max(15, p.maxHp * 0.15));
-          this.particles.text(p.x, p.y - 20, "+HP", PALETTE.heal, 18);
-          this.audio.pickup();
+          this.emit({ k: "text", x: p.x, y: p.y - 20, text: "+HP", color: PALETTE.heal, size: 18 });
+          this.emit({ k: "sfx", n: "pickup", slot: 0 });
         } else {
           this.addXp(g.value);
-          this.audio.pickup();
+          this.emit({ k: "sfx", n: "pickup", slot: 0 });
         }
       }
     }
@@ -521,6 +544,18 @@ export class World {
     }
   }
 
+  /**
+   * Advance the purely visual state (particles, screen flash, music intensity).
+   * Runs inside `update` on the host/solo; a co-op client, which never runs
+   * `update`, calls it every frame on its own.
+   */
+  tickCosmetics(dt: number): void {
+    this.particles.update(dt);
+    if (this.flashT > 0) this.flashT = Math.max(0, this.flashT - dt * 2.2);
+    // Music intensity ramps with time + on-screen pressure.
+    this.audio.setIntensity(clamp(this.time / 240 + this.aliveEnemyCount() / 400, 0, 1));
+  }
+
   private updateNovaRings(dt: number): void {
     for (let i = this.novaRings.length - 1; i >= 0; i--) {
       const n = this.novaRings[i];
@@ -534,10 +569,10 @@ export class World {
     if (this.gameOver) return;
     this.gameOver = true;
     this.player.hp = 0;
-    this.audio.bigKill();
-    this.addTrauma(1);
-    this.flash("255,60,90", 1);
-    this.particles.spark(this.player.x, this.player.y, PALETTE.player, 80, 420, 5);
+    this.emit({ k: "sfx", n: "bigKill", slot: 0 });
+    this.emit({ k: "trauma", v: 1, slot: 0 });
+    this.emit({ k: "flash", color: "255,60,90", i: 1, slot: 0 });
+    this.emit({ k: "spark", x: this.player.x, y: this.player.y, color: PALETTE.player, count: 80, speed: 420, size: 5 });
   }
 
   // ---- Level-up interface (driven by the UI layer) ------------------------
@@ -553,8 +588,8 @@ export class World {
     u.apply(this.player);
     this.taken[u.id] = (this.taken[u.id] ?? 0) + 1;
     this.pendingLevelUps = Math.max(0, this.pendingLevelUps - 1);
-    this.audio.levelup();
-    this.flash("120,200,255", 0.4);
+    this.emit({ k: "sfx", n: "levelup", slot: -1 });
+    this.emit({ k: "flash", color: "120,200,255", i: 0.4, slot: -1 });
   }
 
   get stats(): RunStats {
