@@ -11,7 +11,7 @@ export class Player {
   y = 0;
   vx = 0;
   vy = 0;
-  facing = 0; // radians, aim/heading for the ship sprite
+  facing = 0; // radians, aim heading (toward nearest enemy) — drives the 3D model's body rotation
 
   hp: number;
   invuln = 0; // i-frame timer

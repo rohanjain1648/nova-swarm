@@ -31,8 +31,23 @@ function dim(ctx: CanvasRenderingContext2D, w: number, h: number, alpha: number)
   ctx.fillRect(0, 0, w, h);
 }
 
-/** Big pulsing title text with an additive glow pass. */
-function neonTitle(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size: number, time: number): void {
+/**
+ * Font size <= maxSize (and >= minSize) such that `text` at `weight`-weight
+ * Segoe UI fits within `maxWidth`. Font metrics scale linearly with size, so
+ * one measurement at maxSize gives the exact fit — no shrink-and-remeasure
+ * loop needed. This guards against real-device font-metric variance that a
+ * fixed `size = f(viewportWidth)` formula can't account for.
+ */
+function fitFontSize(ctx: CanvasRenderingContext2D, text: string, weight: number, maxWidth: number, maxSize: number, minSize = 10): number {
+  ctx.font = `${weight} ${maxSize}px 'Segoe UI', system-ui, sans-serif`;
+  const measured = ctx.measureText(text).width;
+  if (measured <= maxWidth || measured === 0) return maxSize;
+  return Math.max(minSize, Math.floor((maxWidth / measured) * maxSize));
+}
+
+/** Big pulsing title text with an additive glow pass, auto-shrunk to always fit `maxWidth`. */
+function neonTitle(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxSize: number, time: number, maxWidth: number): void {
+  const size = fitFontSize(ctx, text, 900, maxWidth, maxSize);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.font = `900 ${size}px 'Segoe UI', system-ui, sans-serif`;
@@ -164,12 +179,13 @@ export function muteButtonRect(w: number): Rect {
 // ---- Title screen --------------------------------------------------------
 export function drawTitle(ctx: CanvasRenderingContext2D, w: number, h: number, time: number, best: RunStats | null, muted: boolean): void {
   dim(ctx, w, h, 0.55);
-  neonTitle(ctx, "NOVA SWARM", w / 2, h * 0.28, Math.min(72, w * 0.11), time);
+  neonTitle(ctx, "NOVA SWARM", w / 2, h * 0.28, Math.min(72, w * 0.11), time, w * 0.92);
 
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = "rgba(230,244,255,0.75)";
-  ctx.font = "600 17px 'Segoe UI', system-ui, sans-serif";
+  const taglineSize = fitFontSize(ctx, "Outlast the neon swarm. Level up. Build a deadly run.", 600, w * 0.92, 17);
+  ctx.font = `600 ${taglineSize}px 'Segoe UI', system-ui, sans-serif`;
   ctx.fillText("Outlast the neon swarm. Level up. Build a deadly run.", w / 2, h * 0.28 + 52);
 
   // ---- Dedicated "HOW TO PLAY" panel: a bordered card (same visual language
@@ -210,10 +226,17 @@ export function drawTitle(ctx: CanvasRenderingContext2D, w: number, h: number, t
   ctx.font = "800 15px 'Segoe UI', system-ui, sans-serif";
   ctx.fillText("HOW TO PLAY", w / 2, panelTop + 24);
 
-  ctx.font = "500 14px 'Segoe UI', system-ui, sans-serif";
+  const controlsMaxW = panel.w * 0.92;
+  const controls1 = "Move: WASD / Arrows / drag  •  You fire automatically";
+  const controls2 = "Pick upgrades on level-up  •  M mutes  •  ESC pauses";
+  const controlsSize = Math.min(
+    fitFontSize(ctx, controls1, 500, controlsMaxW, 14),
+    fitFontSize(ctx, controls2, 500, controlsMaxW, 14),
+  );
+  ctx.font = `500 ${controlsSize}px 'Segoe UI', system-ui, sans-serif`;
   ctx.fillStyle = "rgba(230,244,255,0.55)";
-  ctx.fillText("Move: WASD / Arrows / drag  •  You fire automatically", w / 2, panelTop + 56);
-  ctx.fillText("Pick upgrades on level-up  •  M mutes  •  ESC pauses", w / 2, panelTop + 80);
+  ctx.fillText(controls1, w / 2, panelTop + 56);
+  ctx.fillText(controls2, w / 2, panelTop + 80);
 
   // Enemy roster + weapon legend, sourced straight from the enemy/palette
   // data so it can't drift out of sync with the actual in-game colors.
@@ -232,10 +255,12 @@ export function drawTitle(ctx: CanvasRenderingContext2D, w: number, h: number, t
   drawLegendRow(ctx, w, panelTop + 166, "WEAPONS", weaponItems);
 
   if (best) {
+    const bestText = `BEST  ${formatTime(best.time)}  •  ${best.kills} kills  •  Lv ${best.level}`;
     ctx.textAlign = "center";
     ctx.fillStyle = PALETTE.xp;
-    ctx.font = "700 15px 'Segoe UI', system-ui, sans-serif";
-    ctx.fillText(`BEST  ${formatTime(best.time)}  •  ${best.kills} kills  •  Lv ${best.level}`, w / 2, panelTop + panelH + 28);
+    const bestSize = fitFontSize(ctx, bestText, 700, panel.w * 0.92, 15);
+    ctx.font = `700 ${bestSize}px 'Segoe UI', system-ui, sans-serif`;
+    ctx.fillText(bestText, w / 2, panelTop + panelH + 28);
   }
 
   drawButton(ctx, titlePlayButtonRect(w, h), "▶  PLAY", time);
@@ -281,7 +306,7 @@ export function drawLevelUp(
   dim(ctx, w, h, 0.72);
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  neonTitle(ctx, "LEVEL UP", w / 2, h * 0.16, Math.min(48, w * 0.07), time);
+  neonTitle(ctx, "LEVEL UP", w / 2, h * 0.16, Math.min(48, w * 0.07), time, w * 0.9);
   ctx.fillStyle = "rgba(230,244,255,0.6)";
   ctx.font = "600 15px 'Segoe UI', system-ui, sans-serif";
   ctx.fillText("Choose an upgrade  —  click or press 1 / 2 / 3", w / 2, h * 0.16 + 40);
@@ -350,7 +375,7 @@ export function quitButtonRect(w: number, h: number): Rect {
 
 export function drawPause(ctx: CanvasRenderingContext2D, w: number, h: number, time: number): void {
   dim(ctx, w, h, 0.6);
-  neonTitle(ctx, "PAUSED", w / 2, h * 0.32, Math.min(52, w * 0.08), time);
+  neonTitle(ctx, "PAUSED", w / 2, h * 0.32, Math.min(52, w * 0.08), time, w * 0.9);
   ctx.fillStyle = "rgba(230,244,255,0.6)";
   ctx.font = "600 14px 'Segoe UI', system-ui, sans-serif";
   ctx.textAlign = "center";
@@ -372,7 +397,7 @@ export function drawGameOver(
   time: number,
 ): void {
   dim(ctx, w, h, 0.78);
-  neonTitle(ctx, "SWARMED", w / 2, h * 0.24, Math.min(64, w * 0.1), time);
+  neonTitle(ctx, "SWARMED", w / 2, h * 0.24, Math.min(64, w * 0.1), time, w * 0.9);
 
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";

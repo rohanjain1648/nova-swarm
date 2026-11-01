@@ -104,6 +104,10 @@ function startGame(): void {
   world.reset();
   newBest = false;
   state = "playing";
+  // Push a history entry so the mobile back button/gesture has something to
+  // "consume" — without this, Android back navigates straight off the page
+  // mid-run instead of pausing (see the popstate handler below).
+  history.pushState({ novaGame: true }, "", location.href);
 }
 
 function openLevelUp(): void {
@@ -214,6 +218,19 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden && state === "playing") state = "paused";
 });
 
+// Mobile back button/gesture: pause instead of leaving the page (Android
+// Chrome maps back to browser history navigation by default, which would
+// otherwise exit the run entirely). Re-push the guard entry each time so
+// every subsequent back-press while the game is active is caught the same
+// way; once the player is back on the menu we stop re-pushing, so back
+// behaves normally (actually leaves) when there's no run to protect.
+window.addEventListener("popstate", () => {
+  if (state === "playing") state = "paused";
+  if (state !== "menu" && state !== "loading") {
+    history.pushState({ novaGame: true }, "", location.href);
+  }
+});
+
 // --- Loop -------------------------------------------------------------------
 function update(dt: number): void {
   switch (state) {
@@ -322,5 +339,6 @@ if (new URLSearchParams(location.search).has("debug")) {
     hp: Math.round(world.player.hp),
     pending: world.pendingLevelUps,
     time: Math.round(world.time),
+    facingDeg: Math.round((world.player.facing * 180) / Math.PI),
   });
 }

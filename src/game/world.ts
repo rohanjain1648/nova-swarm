@@ -174,6 +174,10 @@ export class World {
     this.grid.rebuild(this.enemies);
 
     const target = this.grid.nearest(this.player.x, this.player.y, 1400);
+    // The robot faces (and thus visibly aims at) the nearest enemy it's
+    // auto-firing on; holds its last heading only when nothing is in range.
+    // This keeps facing and firing visually consistent — the robot looks like
+    // it's shooting at what it's pointed at, and turns to track the swarm.
     this.player.facing = target ? angleTo(this.player.x, this.player.y, target.x, target.y) : this.player.facing;
 
     this.fireWeapons(dt, target);
