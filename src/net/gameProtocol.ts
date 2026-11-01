@@ -10,7 +10,9 @@ import type { ClientToRelay } from "./relayProtocol";
 export type ClientToHost =
   | { k: "pose"; x: number; y: number; facing: number; firing: boolean }
   | { k: "pick"; round: number; index: number }
-  | { k: "ping" };
+  | { k: "ping" }
+  /** Sent after joining: this player's robot class (app players only). */
+  | { k: "hello"; archetype: string };
 
 export interface OverInfo {
   k: "over";

@@ -289,7 +289,7 @@ function leaveCoop(reason?: string): void {
 function onRelayMessage(m: RelayToClient): void {
   if (m.t === "roster") {
     roster = m.players;
-    if (hostSession && state !== "lobby") hostSession.onRoster(m.players);
+    hostSession?.onRoster(m.players);
   } else if (m.t === "closed") {
     leaveCoop("Host left the room");
   } else if (m.t === "msg") {
@@ -328,9 +328,14 @@ function finishCoopRun(info: OverInfo): void {
   state = "gameover";
 }
 
+/** Where an invite link should open: the deployed site if configured, else this page. */
+function inviteBaseUrl(): string {
+  return import.meta.env.VITE_PUBLIC_URL || `${location.origin}${location.pathname}`;
+}
+
 function copyInvite(): void {
   if (!relay) return;
-  const link = `${location.origin}${location.pathname}?room=${relay.code}`;
+  const link = `${inviteBaseUrl()}?room=${relay.code}`;
   navigator.clipboard?.writeText(link).then(
     () => showToast("Invite link copied", 2000),
     () => showToast(link, 6000),
@@ -583,6 +588,7 @@ function render(): void {
 
   // A co-op client's World is written from host snapshots, once per frame.
   if (mode === "client" && clientSession?.isRunning) clientSession.frame(rdt);
+  if (clientSession?.versionMismatch) leaveCoop("Your friend is on a different version — refresh or update the game");
 
   // Sync the 3D scene from World's data + advance camera/atmosphere on the
   // real render clock (not the fixed sim step) so animation blending stays smooth.
@@ -685,12 +691,13 @@ if (new URLSearchParams(location.search).has("debug")) {
     players: world.players.filter((p) => p.active).length,
     peers: world.players
       .filter((p) => p.active && p.slot !== world.localSlot)
-      .map((p) => ({ slot: p.slot, x: Math.round(p.x), y: Math.round(p.y) })),
+      .map((p) => ({ slot: p.slot, x: Math.round(p.x), y: Math.round(p.y), maxHp: p.maxHp })),
     level: world.level,
     xp: Math.round(world.xp),
     xpToNext: world.xpToNext,
     kills: world.kills,
     hp: Math.round(world.player.hp),
+    maxHp: world.player.maxHp,
     pending: world.pendingLevelUps,
     time: Math.round(world.time),
     facingDeg: Math.round((world.player.facing * 180) / Math.PI),

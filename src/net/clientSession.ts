@@ -26,6 +26,8 @@ export class ClientSession {
   private lastSnapAt = 0;
   private _cards: { round: number; cards: UpgradeCard[] } | null = null;
   overInfo: OverInfo | null = null;
+  /** A snapshot couldn't be read: the host is on a different build of the game. */
+  versionMismatch = false;
 
   constructor(
     private readonly world: World,
@@ -57,7 +59,13 @@ export class ClientSession {
 
   onSnapshot(data: ArrayBuffer): void {
     if (!this.running) return;
-    const s = decodeSnapshot(data);
+    let s: Snapshot;
+    try {
+      s = decodeSnapshot(data);
+    } catch {
+      this.versionMismatch = true;
+      return;
+    }
     const last = this.buf[this.buf.length - 1];
     if (last && s.seq <= last.s.seq) return;
     this.buf.push({ s, at: this.now() });
@@ -104,6 +112,11 @@ export class ClientSession {
     if (!this._cards) return;
     this.sendGame({ k: "pick", round: this._cards.round, index });
     this._cards = null;
+  }
+
+  /** Tell the host which robot class this player chose. */
+  hello(archetype: string): void {
+    this.sendGame({ k: "hello", archetype });
   }
 
   ping(): void {

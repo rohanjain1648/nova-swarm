@@ -33,6 +33,8 @@ export interface Enemy {
   isBoss: boolean;
   splitInto?: EnemyKind;
   spawnT: number; // time alive, for spawn-in animation
+  /** Countdown after landing a contact hit; the app plays the Punch clip while > 0. */
+  punchT: number;
 }
 
 export interface Bullet {

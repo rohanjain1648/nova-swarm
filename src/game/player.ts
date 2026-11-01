@@ -36,6 +36,8 @@ export class Player {
   hp: number;
   invuln = 0; // i-frame timer
   hurtFlash = 0;
+  /** Set to 1 whenever the blaster fires, decays fast — drives the app's recoil animation. */
+  recoilT = 0;
 
   // --- Stats (mutated by upgrades) ---
   maxHp = PLAYER.baseHp;
@@ -92,6 +94,7 @@ export class Player {
     this.orbitAngle = 0;
     this.invuln = 0;
     this.hurtFlash = 0;
+    this.recoilT = 0;
     this.regenFrac = 0;
     this.hp = this.maxHp;
     this.downed = false;

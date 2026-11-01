@@ -66,7 +66,7 @@ body::after {
   inset: 0;
   z-index: 10;
   display: grid;
-  place-items: center;
+  place-items: start center;
   padding: 16px;
   background: rgba(3, 4, 8, 0.7);
   touch-action: auto;
@@ -75,8 +75,10 @@ body::after {
 .code-card {
   width: min(340px, 100%);
   display: grid;
+  /* minmax(0, ...) lets the big-lettered input shrink to the card instead of overflowing it. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
-  padding: 24px;
+  padding: 20px 24px;
   border: 1.5px solid rgba(63, 233, 255, 0.45);
   border-radius: 16px;
   background: linear-gradient(rgba(20, 28, 48, 0.95), rgba(8, 10, 20, 0.95));
@@ -92,6 +94,7 @@ body::after {
 }
 
 .code-card input {
+  width: 100%;
   font: 900 40px "Segoe UI", system-ui, sans-serif;
   letter-spacing: 0.3em;
   text-align: center;

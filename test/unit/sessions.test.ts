@@ -246,3 +246,33 @@ test("client cards arrive, pick sends the round, and the cards clear", () => {
   const pick = cwire.text.find((m) => m.t === "send" && (m.data as ClientToHost).k === "pick");
   expect(pick).toMatchObject({ t: "send", data: { k: "pick", round: 1, index: 1 } });
 });
+
+test("a joiner's class reaches the host's run, and is forgotten when the slot frees up", () => {
+  host.onClientMessage(1, { k: "hello", archetype: "vanguard" });
+  host.start(SLOTS);
+  expect(hw.players[1].armor).toBe(4);
+  expect(wire.game().at(-1)).toMatchObject({ k: "start", slots: [{ slot: 0 }, { slot: 1, archetype: "vanguard" }] });
+
+  host.onRoster([{ slot: 0, name: "HOST", connected: true }]);
+  host.start(SLOTS);
+  expect(hw.players[1].armor).toBe(0);
+});
+
+test("the host's own class in the slot list is kept", () => {
+  host.start([{ slot: 0, name: "HOST", archetype: "vanguard" }, { slot: 1, name: "GUEST" }]);
+  expect(hw.players[0].armor).toBe(4);
+  expect(hw.players[1].armor).toBe(0);
+});
+
+test("client hello sends its class to the host", () => {
+  startClient();
+  client.hello("recon");
+  expect(cwire.text.at(-1)).toEqual({ t: "send", data: { k: "hello", archetype: "recon" } });
+});
+
+test("a snapshot from a different game version is flagged, not thrown", () => {
+  startClient();
+  const bad = new Uint8Array([99, 0, 0, 0, 0]);
+  expect(() => client.onSnapshot(bad.buffer)).not.toThrow();
+  expect(client.versionMismatch).toBe(true);
+});
