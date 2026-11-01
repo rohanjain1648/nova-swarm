@@ -74,6 +74,8 @@ export class World {
   private boss: Enemy | null = null;
   flashT = 0; // full-screen flash intensity (level up / boss / death), read by the HUD overlay
   flashColor = "255,255,255";
+  /** Co-op client: the boss bar comes from the host's snapshot, not a local boss. */
+  bossHpOverride: number | null = null;
 
   /** Which player's screen this World drives (effects targeted elsewhere are skipped). */
   localSlot = 0;
@@ -797,6 +799,7 @@ export class World {
   }
 
   get bossHpFraction(): number | null {
+    if (this.bossHpOverride !== null) return this.bossHpOverride;
     return this.boss && !this.boss.dead ? clamp(this.boss.hp / this.boss.maxHp, 0, 1) : null;
   }
 }
